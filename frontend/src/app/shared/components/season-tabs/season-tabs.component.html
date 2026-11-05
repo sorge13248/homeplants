@@ -1,0 +1,151 @@
+<div class="season-tabs-container">
+  <!-- Tabs header -->
+  <div class="tabs-nav">
+    <button
+      type="button"
+      class="tab-btn"
+      [class.active]="activeTab === 'spring'"
+      (click)="activeTab = 'spring'"
+    >
+      🌸 Primavera
+    </button>
+    <button
+      type="button"
+      class="tab-btn"
+      [class.active]="activeTab === 'summer'"
+      (click)="activeTab = 'summer'"
+    >
+      ☀️ Estate
+    </button>
+    <button
+      type="button"
+      class="tab-btn"
+      [class.active]="activeTab === 'autumn'"
+      (click)="activeTab = 'autumn'"
+    >
+      🍂 Autunno
+    </button>
+    <button
+      type="button"
+      class="tab-btn"
+      [class.active]="activeTab === 'winter'"
+      (click)="activeTab = 'winter'"
+    >
+      ❄️ Inverno
+    </button>
+  </div>
+
+  <!-- Tab content -->
+  <div class="tab-panel glass-panel">
+    @if (editMode) {
+      <!-- Edit Form -->
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Esposizione Sole / Luce</label>
+          <select class="input-field" [(ngModel)]="currentSchedule.sunExposure" (ngModelChange)="onModelChange()">
+            <option [ngValue]="undefined">Non specificato</option>
+            <option value="direct">Luce Diretta</option>
+            <option value="indirect">Luce Indiretta Luminosa</option>
+            <option value="filtered">Luce Filtrata</option>
+            <option value="shade">Mezz'ombra / Ombra</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Collocazione</label>
+          <select class="input-field" [(ngModel)]="currentSchedule.placement" (ngModelChange)="onModelChange()">
+            <option [ngValue]="undefined">Non specificato</option>
+            <option value="indoor">Interno</option>
+            <option value="outdoor">Esterno</option>
+            <option value="greenhouse">Serra / Riparato</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Frequenza innaffiatura (ogni quanti giorni?)</label>
+          <input
+            type="number"
+            min="1"
+            max="60"
+            class="input-field"
+            placeholder="es. 3 (ogni 3 giorni)"
+            [(ngModel)]="currentWatering.frequencyDays"
+            (ngModelChange)="onModelChange()"
+          />
+        </div>
+
+        <div class="form-group">
+          <label>Quantità d'acqua</label>
+          <select class="input-field" [(ngModel)]="currentWatering.quantity" (ngModelChange)="onModelChange()">
+            <option [ngValue]="undefined">Non specificata</option>
+            <option value="low">Scarsa (vaporizzazione o poca)</option>
+            <option value="moderate">Moderata</option>
+            <option value="abundant">Abbondante (bagno completo)</option>
+          </select>
+        </div>
+
+        <div class="form-group full-width">
+          <label class="checkbox-label">
+            <input
+              type="checkbox"
+              [(ngModel)]="currentWatering.drySoilOnly"
+              (ngModelChange)="onModelChange()"
+            />
+            <span>Innaffiare solo a terriccio completamente asciutto</span>
+          </label>
+        </div>
+
+        <div class="form-group full-width">
+          <label>Consigli specifici per l'innaffiatura (es. orario o ombra)</label>
+          <input
+            type="text"
+            class="input-field"
+            placeholder="es. Innaffiare solo quando all'ombra o al mattino presto"
+            [(ngModel)]="currentWatering.advices"
+            (ngModelChange)="onModelChange()"
+          />
+        </div>
+      </div>
+    } @else {
+      <!-- View Display -->
+      @if (hasDataForCurrentSeason()) {
+        <div class="view-grid">
+          <div class="info-card">
+            <div class="info-label">Esposizione Luce</div>
+            <div class="info-val">{{ getSunExposureLabel(currentSchedule.sunExposure) }}</div>
+          </div>
+          <div class="info-card">
+            <div class="info-label">Collocazione</div>
+            <div class="info-val">{{ getPlacementLabel(currentSchedule.placement) }}</div>
+          </div>
+          <div class="info-card">
+            <div class="info-label">Frequenza Innaffiatura</div>
+            <div class="info-val">
+              {{ currentSchedule.watering?.frequencyDays ? 'Ogni ' + currentSchedule.watering?.frequencyDays + ' giorni' : 'Non specificata' }}
+            </div>
+          </div>
+          <div class="info-card">
+            <div class="info-label">Quantità</div>
+            <div class="info-val">{{ getQuantityLabel(currentSchedule.watering?.quantity) }}</div>
+          </div>
+
+          @if (currentSchedule.watering?.drySoilOnly) {
+            <div class="info-alert full-width">
+              ⚠️ Innaffiare solo quando il terriccio è asciutto in superficie.
+            </div>
+          }
+
+          @if (currentSchedule.watering?.advices) {
+            <div class="info-advices full-width">
+              💡 <strong>Consiglio:</strong> {{ currentSchedule.watering?.advices }}
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="empty-season">
+          Nessuna informazione specifica registrata per la stagione {{ getSeasonName(activeTab) }}.
+        </div>
+      }
+    }
+  </div>
+</div>

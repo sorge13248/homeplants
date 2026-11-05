@@ -1,0 +1,125 @@
+.main-header {
+  position: sticky;
+  top: 1rem;
+  z-index: 100;
+  margin: 0.75rem auto 1.5rem;
+  max-width: 1200px;
+  width: calc(100% - 1.5rem);
+  padding: 0.65rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: var(--radius-full);
+}
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+.brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  color: var(--text-main);
+  font-weight: 700;
+  font-size: 1.15rem;
+}
+.logo-icon {
+  font-size: 1.4rem;
+}
+.nav-links {
+  display: flex;
+  gap: 0.5rem;
+}
+.nav-item {
+  text-decoration: none;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-full);
+  transition: all 0.2s ease;
+
+  &:hover {
+    color: var(--text-main);
+    background: var(--color-primary-subtle);
+  }
+  &.active {
+    color: #ffffff;
+    background: var(--color-primary);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+  }
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.header-icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg-surface-translucent);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: var(--bg-surface);
+    border-color: var(--border-strong);
+  }
+}
+.user-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: 0.25rem;
+}
+.avatar, .avatar-placeholder {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.avatar-placeholder {
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.logout-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.35rem;
+  display: flex;
+  align-items: center;
+  border-radius: 50%;
+  transition: color 0.2s;
+
+  &:hover {
+    color: var(--color-danger);
+  }
+}
+
+@media (max-width: 768px) {
+  .brand-name {
+    display: none;
+  }
+  .header-left {
+    gap: 0.75rem;
+  }
+  .nav-item {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.82rem;
+  }
+}

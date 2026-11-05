@@ -1,0 +1,23 @@
+@if (authService.sessionExpired()) {
+  <div class="modal-backdrop">
+    <div class="glass-modal modal-card">
+      <div class="icon-wrap">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+      </div>
+      <h2>Sessione Scaduta</h2>
+      <p>La tua sessione di accesso è scaduta. Rinnova la sessione o accedi di nuovo per continuare a gestire le tue piante.</p>
+      <div class="actions">
+        <button type="button" class="btn btn-outline" (click)="authService.logout()">
+          Esci
+        </button>
+        <button type="button" class="btn btn-primary" (click)="authService.renewSession()">
+          Rinnova Sessione
+        </button>
+      </div>
+    </div>
+  </div>
+}

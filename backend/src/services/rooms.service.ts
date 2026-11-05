@@ -21,11 +21,21 @@ export class RoomsService {
     if (spaceId) {
       where.spaceId = spaceId;
     }
-    return this.roomsRepo.find({
+    const rooms = await this.roomsRepo.find({
       where,
       relations: { roomPlants: { plant: { attachments: true } } },
-      order: { createdAt: 'DESC' },
+      order: { name: 'ASC' },
     });
+    for (const room of rooms) {
+      if (room.roomPlants) {
+        room.roomPlants.sort((a, b) =>
+          (a.plant?.commonName || a.plant?.scientificName || '').localeCompare(
+            b.plant?.commonName || b.plant?.scientificName || '',
+          ),
+        );
+      }
+    }
+    return rooms;
   }
 
   async findOne(userId: string, id: string): Promise<Room> {
@@ -35,6 +45,13 @@ export class RoomsService {
     });
     if (!room) {
       throw new NotFoundException(`Room ${id} not found`);
+    }
+    if (room.roomPlants) {
+      room.roomPlants.sort((a, b) =>
+        (a.plant?.commonName || a.plant?.scientificName || '').localeCompare(
+          b.plant?.commonName || b.plant?.scientificName || '',
+        ),
+      );
     }
     return room;
   }

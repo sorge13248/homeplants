@@ -1,0 +1,193 @@
+<div class="page-container">
+  <!-- Breadcrumbs -->
+  <nav class="breadcrumbs">
+    <a routerLink="/plants" class="breadcrumb-link">Catalogo Piante</a>
+    <span class="separator">/</span>
+    <span class="current">{{ plant()?.commonName || 'Dettaglio Pianta' }}</span>
+  </nav>
+
+  @if (loading()) {
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <p>Caricamento scheda botanica...</p>
+    </div>
+  } @else if (plant(); as pl) {
+    <div class="sheet-layout">
+      <!-- Left Column: Gallery & Quick Actions -->
+      <div class="gallery-column">
+        <div class="glass-panel image-card">
+          <div class="main-image-wrap">
+            @if (selectedImageUrl || getCoverImage(pl)) {
+              <img
+                [src]="selectedImageUrl || getCoverImage(pl)"
+                [alt]="pl.commonName"
+                class="main-image"
+              />
+            } @else {
+              <div class="placeholder-icon">🪴</div>
+            }
+          </div>
+
+          <!-- Thumbnails row if multiple attachments -->
+          @if (pl.attachments && pl.attachments.length > 1) {
+            <div class="thumbnails-row">
+              @for (att of pl.attachments; track att.id) {
+                <button
+                  type="button"
+                  class="thumbnail-btn"
+                  [class.active]="selectedImageUrl === ('/api/attachments/' + att.id + '/preview')"
+                  (click)="selectedImageUrl = '/api/attachments/' + att.id + '/preview'"
+                >
+                  <img [src]="'/api/attachments/' + att.id + '/preview'" alt="Miniatura" />
+                </button>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- Active Rooms / Exemplars Widget -->
+        <div class="glass-panel instances-card">
+          <div class="card-title-row">
+            <h3>Collocazioni Attive ({{ pl.roomPlants?.length || 0 }})</h3>
+            <button type="button" class="btn btn-sm btn-outline" (click)="openAddToRoom(pl)">
+              + Colloca
+            </button>
+          </div>
+
+          @if (!pl.roomPlants || pl.roomPlants.length === 0) {
+            <p class="empty-text">Nessun esemplare di questa pianta è attualmente collocato in una stanza.</p>
+          } @else {
+            <div class="instances-list">
+              @for (rp of pl.roomPlants; track rp.id) {
+                <div class="instance-row">
+                  <div class="instance-info">
+                    <span class="room-title">{{ rp.room?.name || 'Stanza' }}</span>
+                    @if (rp.position) {
+                      <span class="pos-badge">{{ rp.position }}</span>
+                    }
+                  </div>
+                  @if (rp.room?.spaceId && rp.room?.id) {
+                    <a
+                      [routerLink]="['/spaces', rp.room?.spaceId, 'rooms', rp.room?.id]"
+                      class="link-go"
+                    >
+                      Vai alla stanza →
+                    </a>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- Right Column: Botanical Details & Tabs -->
+      <div class="details-column">
+        <!-- Header Banner -->
+        <div class="glass-panel header-card">
+          <div class="header-main">
+            <div>
+              <h1 class="plant-title">{{ pl.commonName }}</h1>
+              @if (pl.scientificName) {
+                <div class="scientific-title">{{ pl.scientificName }}</div>
+              }
+            </div>
+            <div class="header-actions">
+              <button type="button" class="btn btn-outline" (click)="navigateToEdit(pl.id)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                <span>Modifica</span>
+              </button>
+              <button type="button" class="btn btn-danger-outline" (click)="confirmDelete(pl)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Seasonal Care Tabs -->
+        <div class="care-section">
+          <h2 class="section-title">Calendario Cure Stagionali</h2>
+          <app-season-tabs
+            [seasonalCare]="pl.seasonalCare || null"
+            [editMode]="false"
+          />
+        </div>
+
+        <!-- Soil & Fertilization Specs -->
+        <div class="specs-grid">
+          <!-- Terriccio e Rinvaso -->
+          <div class="glass-panel spec-box">
+            <div class="spec-header">
+              <span class="spec-icon">🪴</span>
+              <h3>Terriccio & Rinvaso</h3>
+            </div>
+            <div class="spec-content">
+              <div class="spec-item">
+                <span class="label">Stagione rinvaso:</span>
+                <span class="val">{{ formatRepotSeason(pl.soilRepotting?.repottingSeason) }}</span>
+              </div>
+              @if (pl.soilRepotting?.potType) {
+                <div class="spec-item">
+                  <span class="label">Vaso consigliato:</span>
+                  <span class="val">{{ pl.soilRepotting?.potType }}</span>
+                </div>
+              }
+              @if (pl.soilRepotting?.soilType) {
+                <div class="spec-item">
+                  <span class="label">Tipo terriccio:</span>
+                  <span class="val">{{ pl.soilRepotting?.soilType }}</span>
+                </div>
+              }
+              @if (pl.soilRepotting?.composition) {
+                <div class="spec-item notes">
+                  <span class="label">Composizione / Drenaggio:</span>
+                  <p class="val-notes">{{ pl.soilRepotting?.composition }}</p>
+                </div>
+              }
+            </div>
+          </div>
+
+          <!-- Concimazione -->
+          <div class="glass-panel spec-box">
+            <div class="spec-header">
+              <span class="spec-icon">🧪</span>
+              <h3>Concimazione & Nutrimento</h3>
+            </div>
+            <div class="spec-content">
+              @if (pl.fertilization?.period) {
+                <div class="spec-item">
+                  <span class="label">Periodo:</span>
+                  <span class="val">{{ pl.fertilization?.period }}</span>
+                </div>
+              }
+              @if (pl.fertilization?.frequencyDays) {
+                <div class="spec-item">
+                  <span class="label">Frequenza:</span>
+                  <span class="val">Ogni {{ pl.fertilization?.frequencyDays }} giorni</span>
+                </div>
+              }
+              @if (pl.fertilization?.fertilizerType) {
+                <div class="spec-item">
+                  <span class="label">Tipo concime:</span>
+                  <span class="val">{{ pl.fertilization?.fertilizerType }}</span>
+                </div>
+              }
+              @if (pl.fertilization?.notes) {
+                <div class="spec-item notes">
+                  <span class="label">Consigli concimazione:</span>
+                  <p class="val-notes">{{ pl.fertilization?.notes }}</p>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+</div>

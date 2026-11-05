@@ -1,0 +1,93 @@
+<div class="sync-container">
+  <button
+    type="button"
+    class="sync-pill"
+    [ngClass]="'status-' + status()"
+    (click)="toggleDropdown($event)"
+    title="Stato sincronizzazione e opzioni"
+  >
+    <!-- Icon -->
+    <span class="icon-wrap" [class.spinning]="status() === 'syncing'">
+      @if (status() === 'syncing') {
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+        </svg>
+      } @else if (status() === 'online-ok') {
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M20 6L9 17l-5-5"/>
+        </svg>
+      } @else if (status() === 'offline') {
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0-4 7h1.26a5 5 0 0 0 9.74 1.95"/>
+          <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>
+      } @else if (status() === 'conflict') {
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      }
+    </span>
+
+    <span class="status-text">{{ statusShortLabel() }}</span>
+
+    @if (pendingCount() > 0) {
+      <span class="pending-badge">{{ pendingCount() }}</span>
+    }
+  </button>
+
+  <!-- Glassmorphic Dropdown Menu -->
+  @if (dropdownOpen()) {
+    <div class="glass-modal sync-dropdown" (click)="$event.stopPropagation()">
+      <div class="dropdown-header">
+        <h4>Sincronizzazione Dati</h4>
+        <div class="last-sync-time">
+          <span>Ultimo sync:</span>
+          <strong>{{ formattedLastSync() }}</strong>
+        </div>
+      </div>
+
+      <div class="dropdown-body">
+        <div class="status-row">
+          <span class="dot" [ngClass]="'dot-' + status()"></span>
+          <span class="status-desc">{{ statusDescription() }}</span>
+        </div>
+
+        @if (pendingCount() > 0) {
+          <div class="pending-notice">
+            {{ pendingCount() }} {{ pendingCount() === 1 ? 'modifica locale in attesa' : 'modifiche locali in attesa' }} di upload
+          </div>
+        }
+      </div>
+
+      <div class="dropdown-actions">
+        <button
+          type="button"
+          class="btn btn-sm btn-primary w-full"
+          [disabled]="status() === 'syncing' || !syncService.isOnline()"
+          (click)="onForceSync()"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+          </svg>
+          <span>Forza sync</span>
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-sm btn-outline w-full btn-reset-server"
+          [disabled]="status() === 'syncing' || !syncService.isOnline()"
+          (click)="onResetServerVersion()"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span>Reset su versione del server</span>
+        </button>
+      </div>
+    </div>
+  }
+</div>

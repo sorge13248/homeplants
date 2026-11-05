@@ -75,6 +75,38 @@ describe('OfflineStorageService', () => {
     expect(all.some((p: PlantItem) => p.id === 'plant-1')).toBe(true);
   });
 
+  it('dovrebbe ordinare spazi, stanze e piante in ordine alfabetico', async () => {
+    // Spazi
+    await service.saveSpaces([
+      { id: 's-z', name: 'Z - Terrazzo', createdAt: '', updatedAt: '' },
+      { id: 's-a', name: 'A - Balcone', createdAt: '', updatedAt: '' },
+      { id: 's-m', name: 'M - Salotto', createdAt: '', updatedAt: '' },
+    ]);
+    const spaces = await service.getAllSpaces();
+    expect(spaces.map((s) => s.name)).toEqual(['A - Balcone', 'M - Salotto', 'Z - Terrazzo']);
+
+    // Stanze
+    await service.saveRooms([
+      { id: 'r-z', spaceId: 's-a', name: 'Zona Z', createdAt: '', updatedAt: '' },
+      { id: 'r-a', spaceId: 's-a', name: 'Angolo A', createdAt: '', updatedAt: '' },
+      { id: 'r-m', spaceId: 's-a', name: 'Mensola M', createdAt: '', updatedAt: '' },
+    ]);
+    const roomsBySpace = await service.getRoomsBySpace('s-a');
+    expect(roomsBySpace.map((r) => r.name)).toEqual(['Angolo A', 'Mensola M', 'Zona Z']);
+
+    const allRooms = await service.getAllRooms();
+    expect(allRooms.map((r) => r.name)).toEqual(['Angolo A', 'Mensola M', 'Zona Z']);
+
+    // Piante
+    await service.savePlants([
+      { id: 'p-z', commonName: 'Zamioculcas', createdAt: '', updatedAt: '' },
+      { id: 'p-a', commonName: 'Aloe Vera', createdAt: '', updatedAt: '' },
+      { id: 'p-m', commonName: 'Monstera Deliciosa', createdAt: '', updatedAt: '' },
+    ]);
+    const plants = await service.getAllPlants();
+    expect(plants.map((p) => p.commonName)).toEqual(['Aloe Vera', 'Monstera Deliciosa', 'Zamioculcas']);
+  });
+
   it('dovrebbe gestire la coda di sincronizzazione', async () => {
     const item: SyncQueueItem = {
       id: 'queue-1',

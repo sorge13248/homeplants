@@ -1,0 +1,182 @@
+<div class="page-container">
+  <!-- Breadcrumbs -->
+  <nav class="breadcrumbs">
+    <a routerLink="/spaces" class="breadcrumb-link">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="15 18 9 12 15 6"></polyline>
+      </svg>
+      <span>Tutti gli Spazi</span>
+    </a>
+    <span class="separator">/</span>
+    <span class="current">{{ space()?.name || 'Spazio' }}</span>
+  </nav>
+
+  @if (loading()) {
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <p>Caricamento spazio...</p>
+    </div>
+  } @else if (space(); as sp) {
+    <!-- Space Hero Banner -->
+    <div class="glass-panel space-hero">
+      @if (sp.coverPhotoUrl) {
+        <div class="hero-image-wrap">
+          <img [src]="sp.coverPhotoUrl" [alt]="sp.name" class="hero-img" />
+        </div>
+      }
+      <div class="hero-content">
+        <div class="hero-header">
+          <div>
+            <h1 class="hero-title">{{ sp.name }}</h1>
+            @if (sp.location) {
+              <div class="hero-location">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                  <circle cx="12" cy="10" r="3"></circle>
+                </svg>
+                <span>{{ sp.location }}</span>
+                @if (getMapLink(sp.location); as mapUrl) {
+                  <a [href]="mapUrl" target="_blank" rel="noopener noreferrer" class="map-pill">
+                    Apri su {{ getMapProviderName() }} ↗
+                  </a>
+                }
+              </div>
+            }
+          </div>
+          <div class="hero-actions">
+            <button type="button" class="btn btn-outline" (click)="openCreateRoomModal()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>Nuova Stanza</span>
+            </button>
+          </div>
+        </div>
+
+        @if (sp.description) {
+          <p class="hero-desc">{{ sp.description }}</p>
+        }
+      </div>
+    </div>
+
+    <!-- Rooms Section -->
+    <div class="section-container">
+      <div class="section-header">
+        <h2>Stanze e Ambienti ({{ rooms().length }})</h2>
+      </div>
+
+      @if (rooms().length === 0) {
+        <div class="empty-state glass-panel">
+          <div class="empty-icon">🪴</div>
+          <h3>Nessuna stanza in questo spazio</h3>
+          <p>Aggiungi le stanze della casa (es: Salotto, Balcone, Camera da letto) per iniziare a collocare le tue piante.</p>
+          <button type="button" class="btn btn-primary" (click)="openCreateRoomModal()">
+            Crea Stanza
+          </button>
+        </div>
+      } @else {
+        <div class="grid-layout">
+          @for (room of rooms(); track room.id) {
+            <app-card
+              [title]="room.name"
+              [description]="room.description"
+              [imageUrl]="room.coverPhotoUrl"
+              [statusBadge]="(room.roomPlants?.length || 0) + ' ' + ((room.roomPlants?.length === 1) ? 'Pianta' : 'Piante')"
+              [statusVariant]="'default'"
+              [showActions]="true"
+              (cardClick)="navigateToRoom(room.id)"
+              (edit)="openEditRoomModal(room)"
+              (delete)="confirmDeleteRoom(room)"
+            />
+          }
+        </div>
+      }
+    </div>
+  }
+
+  <!-- Create / Edit Room Modal -->
+  @if (showRoomModal()) {
+    <div class="modal-backdrop" (click)="closeRoomModal()">
+      <div class="glass-modal modal-card" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>{{ isEditingRoom() ? 'Modifica Stanza' : 'Nuova Stanza' }}</h2>
+          <button type="button" class="icon-close" (click)="closeRoomModal()">✕</button>
+        </div>
+
+        <form (ngSubmit)="saveRoom()">
+          <div class="form-group">
+            <label>Nome Stanza *</label>
+            <input
+              type="text"
+              class="input-field"
+              placeholder="Es: Salotto con bovindo, Balcone esposto a Sud"
+              [(ngModel)]="roomFormData.name"
+              name="name"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label>Descrizione / Esposizione (Opzionale)</label>
+            <textarea
+              class="input-field textarea"
+              rows="3"
+              placeholder="Dettagli su umidità, riscaldamento, correnti d'aria..."
+              [(ngModel)]="roomFormData.description"
+              name="description"
+            ></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>Foto Ambiente</label>
+            <div class="photo-upload-row">
+              @if (roomFormData.coverPhotoUrl) {
+                <div class="preview-wrap">
+                  <img [src]="roomFormData.coverPhotoUrl" alt="Copertina" class="preview-img" />
+                  <button type="button" class="btn-remove-photo" (click)="roomFormData.coverPhotoUrl = null">✕</button>
+                </div>
+              }
+              <input
+                type="file"
+                #roomFileInput
+                accept="image/*"
+                style="display: none"
+                (change)="onRoomFileSelected($event)"
+              />
+              <button
+                type="button"
+                class="btn btn-outline"
+                [disabled]="uploadingRoomPhoto()"
+                (click)="roomFileInput.click()"
+              >
+                @if (uploadingRoomPhoto()) {
+                  <span>Caricamento in corso...</span>
+                } @else {
+                  <span>{{ roomFormData.coverPhotoUrl ? 'Cambia foto' : 'Carica foto' }}</span>
+                }
+              </button>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" (click)="closeRoomModal()">
+              Annulla
+            </button>
+            <button
+              type="submit"
+              class="btn btn-primary"
+              [disabled]="!roomFormData.name?.trim() || savingRoom()"
+            >
+              @if (savingRoom()) {
+                <span>Salvataggio...</span>
+              } @else {
+                <span>{{ isEditingRoom() ? 'Salva Modifiche' : 'Crea Stanza' }}</span>
+              }
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+</div>

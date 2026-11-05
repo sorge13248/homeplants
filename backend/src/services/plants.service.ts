@@ -32,6 +32,9 @@ export class PlantsService {
     if (!plant) {
       throw new NotFoundException(`Plant ${id} not found`);
     }
+    if (plant.roomPlants) {
+      plant.roomPlants.sort((a, b) => (a.room?.name || '').localeCompare(b.room?.name || ''));
+    }
     return plant;
   }
 

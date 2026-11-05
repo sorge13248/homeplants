@@ -1,0 +1,277 @@
+<div class="page-container">
+  <!-- Breadcrumbs -->
+  <nav class="breadcrumbs">
+    <a routerLink="/spaces" class="breadcrumb-link">Spazi</a>
+    <span class="separator">/</span>
+    <a [routerLink]="['/spaces', spaceId]" class="breadcrumb-link">{{ space()?.name || 'Spazio' }}</a>
+    <span class="separator">/</span>
+    <span class="current">{{ room()?.name || 'Stanza' }}</span>
+  </nav>
+
+  @if (loading()) {
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <p>Caricamento stanza...</p>
+    </div>
+  } @else if (room(); as rm) {
+    <!-- Room Banner -->
+    <div class="glass-panel room-hero">
+      @if (rm.coverPhotoUrl) {
+        <div class="hero-image-wrap">
+          <img [src]="rm.coverPhotoUrl" [alt]="rm.name" class="hero-img" />
+        </div>
+      }
+      <div class="hero-content">
+        <div class="hero-header">
+          <div>
+            <h1 class="hero-title">{{ rm.name }}</h1>
+            @if (rm.description) {
+              <p class="hero-desc">{{ rm.description }}</p>
+            }
+          </div>
+          <div class="hero-actions">
+            <button
+              type="button"
+              class="btn btn-outline"
+              [disabled]="roomPlants().length === 0"
+              (click)="confirmWaterAll()"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
+              </svg>
+              <span>Innaffia Tutte</span>
+            </button>
+            <button type="button" class="btn btn-primary" (click)="openAddToRoomModal()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>Aggiungi Pianta</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="controls-bar">
+      <div class="tab-filters">
+        <button
+          type="button"
+          class="filter-pill"
+          [class.active]="filterMode === 'all'"
+          (click)="filterMode = 'all'"
+        >
+          Tutte le piante ({{ roomPlants().length }})
+        </button>
+        <button
+          type="button"
+          class="filter-pill"
+          [class.active]="filterMode === 'thirsty'"
+          (click)="filterMode = 'thirsty'"
+        >
+          💧 Da innaffiare ({{ thirstyPlantsCount() }})
+        </button>
+      </div>
+    </div>
+
+    <!-- Plants in Room Grid -->
+    @if (filteredPlants().length === 0) {
+      <div class="empty-state glass-panel">
+        <div class="empty-icon">🌱</div>
+        <h3>
+          {{ filterMode === 'thirsty' ? 'Tutte le piante sono dissetate!' : 'Nessuna pianta in questa stanza' }}
+        </h3>
+        <p>
+          {{
+            filterMode === 'thirsty'
+              ? 'Ottimo lavoro! Nessuna pianta necessita di acqua al momento in questo ambiente.'
+              : 'Scegli una pianta dal catalogo per posizionarla qui e iniziare a monitorare le sue cure.'
+          }}
+        </p>
+        @if (filterMode === 'all') {
+          <button type="button" class="btn btn-primary" (click)="openAddToRoomModal()">
+            Colloca la prima Pianta
+          </button>
+        }
+      </div>
+    } @else {
+      <div class="grid-layout">
+        @for (rp of filteredPlants(); track rp.id) {
+          <div class="glass-card plant-item-card">
+            <!-- Cover Image -->
+            <div class="plant-image-wrap" (click)="navigateToPlantCatalog(rp.plantId)">
+              @if (getPlantImage(rp); as img) {
+                <img [src]="img" [alt]="rp.plant?.commonName" class="plant-img" />
+              } @else {
+                <div class="placeholder-icon">🪴</div>
+              }
+              <div class="due-badge" [ngClass]="getDueBadgeClass(rp)">
+                {{ getDueBadgeText(rp) }}
+              </div>
+            </div>
+
+            <!-- Plant Info -->
+            <div class="plant-card-body">
+              <div class="plant-names" (click)="navigateToPlantCatalog(rp.plantId)">
+                <h3 class="common-name">{{ rp.plant?.commonName || 'Pianta' }}</h3>
+                @if (rp.plant?.scientificName) {
+                  <div class="scientific-name">{{ rp.plant?.scientificName }}</div>
+                }
+              </div>
+
+              @if (rp.position) {
+                <div class="position-tag">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                    <circle cx="12" cy="10" r="3"></circle>
+                  </svg>
+                  <span>{{ rp.position }}</span>
+                </div>
+              }
+
+              <div class="care-stats">
+                <div class="stat-row">
+                  <span class="stat-label">Ultima innaffiatura:</span>
+                  <span class="stat-value">{{ formatLastWatered(rp.lastWateredAt) }}</span>
+                </div>
+                @if (getSeasonalAdvice(rp); as advice) {
+                  <div class="stat-advice">
+                    💡 {{ advice }}
+                  </div>
+                }
+              </div>
+
+              <!-- Actions footer -->
+              <div class="plant-actions-footer">
+                <div class="left-tools">
+                  <!-- Snooze dropdown toggle -->
+                  <div class="dropdown-wrapper">
+                    <button
+                      type="button"
+                      class="icon-btn-tool"
+                      title="Posticipa innaffiatura"
+                      (click)="toggleSnoozeMenu(rp.id)"
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                      </svg>
+                    </button>
+                    @if (activeSnoozeId === rp.id) {
+                      <div class="dropdown-menu glass-panel" (click)="$event.stopPropagation()">
+                        <div class="menu-label">Ricorda fra:</div>
+                        <button type="button" class="menu-item" (click)="snoozePlant(rp.id, 1)">1 ora</button>
+                        <button type="button" class="menu-item" (click)="snoozePlant(rp.id, 4)">4 ore</button>
+                        <button type="button" class="menu-item" (click)="snoozePlant(rp.id, 8)">8 ore</button>
+                        <button type="button" class="menu-item" (click)="snoozePlant(rp.id, 24)">24 ore (1 giorno)</button>
+                        <button type="button" class="menu-item" (click)="snoozePlant(rp.id, 48)">48 ore (2 giorni)</button>
+                      </div>
+                    }
+                  </div>
+
+                  <!-- Edit instance -->
+                  <button
+                    type="button"
+                    class="icon-btn-tool"
+                    title="Modifica posizione e note"
+                    (click)="openEditInstanceModal(rp)"
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                  </button>
+
+                  <!-- Remove from room -->
+                  <button
+                    type="button"
+                    class="icon-btn-tool btn-remove"
+                    title="Rimuovi dalla stanza"
+                    (click)="confirmRemovePlant(rp)"
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                  </button>
+                </div>
+
+                <!-- 1-Click Water Button -->
+                <button
+                  type="button"
+                  class="btn btn-sm btn-water"
+                  [disabled]="wateringPlantId === rp.id"
+                  (click)="waterPlant(rp)"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
+                  </svg>
+                  <span>Innaffia</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+    }
+  }
+
+  <!-- Edit Instance Modal -->
+  @if (showEditModal()) {
+    <div class="modal-backdrop" (click)="closeEditModal()">
+      <div class="glass-modal modal-card" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>Modifica Posizione & Note</h2>
+          <button type="button" class="icon-close" (click)="closeEditModal()">✕</button>
+        </div>
+
+        <form (ngSubmit)="saveInstanceEdit()">
+          <div class="form-group">
+            <label>Posizione nella stanza</label>
+            <input
+              type="text"
+              class="input-field"
+              placeholder="Es: Davanzale finestra, Mensola in alto a sinistra"
+              [(ngModel)]="editFormData.position"
+              name="position"
+            />
+          </div>
+
+          <div class="form-group">
+            <label>Frequenza innaffiatura personalizzata (giorni, opzionale)</label>
+            <input
+              type="number"
+              min="1"
+              max="365"
+              class="input-field"
+              placeholder="Sovrascrive la frequenza stagionale predefinita"
+              [(ngModel)]="editFormData.customFrequencyDays"
+              name="customFrequencyDays"
+            />
+          </div>
+
+          <div class="form-group">
+            <label>Note sull'esemplare</label>
+            <textarea
+              class="input-field textarea"
+              rows="3"
+              placeholder="Note specifiche su questa pianta in questa stanza..."
+              [(ngModel)]="editFormData.notes"
+              name="notes"
+            ></textarea>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" (click)="closeEditModal()">
+              Annulla
+            </button>
+            <button type="submit" class="btn btn-primary" [disabled]="savingInstance()">
+              {{ savingInstance() ? 'Salvataggio...' : 'Salva Modifiche' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+</div>

@@ -107,6 +107,12 @@ export class EmailNotificationService implements OnModuleInit, OnModuleDestroy {
       return new Date(rp.nextWateringDueAt) <= endOfToday;
     });
 
+    thirstyPlants.sort((a, b) =>
+      (a.plant?.commonName || a.plant?.scientificName || '').localeCompare(
+        b.plant?.commonName || b.plant?.scientificName || '',
+      ),
+    );
+
     if (thirstyPlants.length === 0) {
       this.logger.log(`Nessuna pianta da innaffiare oggi per l'utente ${user.displayName}`);
       return false;

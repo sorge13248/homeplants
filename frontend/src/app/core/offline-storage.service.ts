@@ -93,17 +93,19 @@ export class OfflineStorageService {
   // SPACES
   // ==========================================
   async getAllSpaces(): Promise<SpaceItem[]> {
+    const sortSpaces = (list: SpaceItem[]) =>
+      [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     const db = await this.getDB();
-    if (!db) return Array.from(this.memoryStore.spaces.values());
+    if (!db) return sortSpaces(Array.from(this.memoryStore.spaces.values()));
 
     return new Promise((resolve) => {
       try {
         const tx = db.transaction(STORE_SPACES, 'readonly');
         const req = tx.objectStore(STORE_SPACES).getAll();
-        req.onsuccess = () => resolve(req.result ?? []);
-        req.onerror = () => resolve(Array.from(this.memoryStore.spaces.values()));
+        req.onsuccess = () => resolve(sortSpaces(req.result ?? []));
+        req.onerror = () => resolve(sortSpaces(Array.from(this.memoryStore.spaces.values())));
       } catch {
-        resolve(Array.from(this.memoryStore.spaces.values()));
+        resolve(sortSpaces(Array.from(this.memoryStore.spaces.values())));
       }
     });
   }
@@ -189,17 +191,19 @@ export class OfflineStorageService {
   // ROOMS
   // ==========================================
   async getAllRooms(): Promise<RoomItem[]> {
+    const sortRooms = (list: RoomItem[]) =>
+      [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     const db = await this.getDB();
-    if (!db) return Array.from(this.memoryStore.rooms.values());
+    if (!db) return sortRooms(Array.from(this.memoryStore.rooms.values()));
 
     return new Promise((resolve) => {
       try {
         const tx = db.transaction(STORE_ROOMS, 'readonly');
         const req = tx.objectStore(STORE_ROOMS).getAll();
-        req.onsuccess = () => resolve(req.result ?? []);
-        req.onerror = () => resolve(Array.from(this.memoryStore.rooms.values()));
+        req.onsuccess = () => resolve(sortRooms(req.result ?? []));
+        req.onerror = () => resolve(sortRooms(Array.from(this.memoryStore.rooms.values())));
       } catch {
-        resolve(Array.from(this.memoryStore.rooms.values()));
+        resolve(sortRooms(Array.from(this.memoryStore.rooms.values())));
       }
     });
   }
@@ -221,9 +225,11 @@ export class OfflineStorageService {
   }
 
   async getRoomsBySpace(spaceId: string): Promise<RoomItem[]> {
+    const sortRooms = (list: RoomItem[]) =>
+      [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     const db = await this.getDB();
     if (!db) {
-      return Array.from(this.memoryStore.rooms.values()).filter((r) => r.spaceId === spaceId);
+      return sortRooms(Array.from(this.memoryStore.rooms.values()).filter((r) => r.spaceId === spaceId));
     }
 
     return new Promise((resolve) => {
@@ -233,18 +239,18 @@ export class OfflineStorageService {
         if (store.indexNames.contains('spaceId')) {
           const index = store.index('spaceId');
           const req = index.getAll(spaceId);
-          req.onsuccess = () => resolve(req.result ?? []);
+          req.onsuccess = () => resolve(sortRooms(req.result ?? []));
           req.onerror = () =>
-            resolve(Array.from(this.memoryStore.rooms.values()).filter((r) => r.spaceId === spaceId));
+            resolve(sortRooms(Array.from(this.memoryStore.rooms.values()).filter((r) => r.spaceId === spaceId)));
         } else {
           const req = store.getAll();
           req.onsuccess = () =>
-            resolve((req.result ?? []).filter((r: RoomItem) => r.spaceId === spaceId));
+            resolve(sortRooms((req.result ?? []).filter((r: RoomItem) => r.spaceId === spaceId)));
           req.onerror = () =>
-            resolve(Array.from(this.memoryStore.rooms.values()).filter((r) => r.spaceId === spaceId));
+            resolve(sortRooms(Array.from(this.memoryStore.rooms.values()).filter((r) => r.spaceId === spaceId)));
         }
       } catch {
-        resolve(Array.from(this.memoryStore.rooms.values()).filter((r) => r.spaceId === spaceId));
+        resolve(sortRooms(Array.from(this.memoryStore.rooms.values()).filter((r) => r.spaceId === spaceId)));
       }
     });
   }
@@ -314,17 +320,19 @@ export class OfflineStorageService {
   // PLANTS
   // ==========================================
   async getAllPlants(): Promise<PlantItem[]> {
+    const sortPlants = (list: PlantItem[]) =>
+      [...list].sort((a, b) => (a.commonName || '').localeCompare(b.commonName || ''));
     const db = await this.getDB();
-    if (!db) return Array.from(this.memoryStore.plants.values());
+    if (!db) return sortPlants(Array.from(this.memoryStore.plants.values()));
 
     return new Promise((resolve) => {
       try {
         const tx = db.transaction(STORE_PLANTS, 'readonly');
         const req = tx.objectStore(STORE_PLANTS).getAll();
-        req.onsuccess = () => resolve(req.result ?? []);
-        req.onerror = () => resolve(Array.from(this.memoryStore.plants.values()));
+        req.onsuccess = () => resolve(sortPlants(req.result ?? []));
+        req.onerror = () => resolve(sortPlants(Array.from(this.memoryStore.plants.values())));
       } catch {
-        resolve(Array.from(this.memoryStore.plants.values()));
+        resolve(sortPlants(Array.from(this.memoryStore.plants.values())));
       }
     });
   }

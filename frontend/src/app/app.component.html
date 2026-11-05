@@ -1,0 +1,32 @@
+<div class="app-shell">
+  <app-header />
+
+  <main class="main-content">
+    <router-outlet />
+  </main>
+
+  <app-session-expired-modal />
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" aria-live="polite">
+    @for (toast of toastService.toasts(); track toast.id) {
+      <div
+        class="toast glass-panel"
+        [ngClass]="'toast-' + toast.type"
+        (click)="toastService.dismiss(toast.id)"
+      >
+        <div class="toast-icon">
+          @if (toast.type === 'success') {
+            ✓
+          } @else if (toast.type === 'error') {
+            ✕
+          } @else {
+            ℹ
+          }
+        </div>
+        <div class="toast-message">{{ toast.message }}</div>
+        <button type="button" class="toast-close">✕</button>
+      </div>
+    }
+  </div>
+</div>

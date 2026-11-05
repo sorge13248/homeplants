@@ -1,0 +1,71 @@
+<div class="page-container">
+  <!-- Header -->
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Catalogo Piante</h1>
+      <p class="page-subtitle">
+        Il tuo erbario personale con schede botaniche, consigli stagionali e requisiti di cura.
+      </p>
+    </div>
+    <button type="button" class="btn btn-primary" (click)="navigateToCreate()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+      <span>Nuova Pianta</span>
+    </button>
+  </div>
+
+  <!-- Filters & Search -->
+  <div class="filters-bar">
+    <div class="search-box">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input
+        type="text"
+        class="search-input"
+        placeholder="Cerca per nome comune o botanico (es: Monstera, Ficus, Orchidea)..."
+        [(ngModel)]="searchQuery"
+      />
+    </div>
+  </div>
+
+  <!-- Catalog Grid -->
+  @if (loading()) {
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <p>Caricamento catalogo...</p>
+    </div>
+  } @else if (filteredPlants().length === 0) {
+    <div class="empty-state glass-panel">
+      <div class="empty-icon">🪴</div>
+      <h3>Nessuna pianta trovata nel catalogo</h3>
+      <p>Aggiungi la prima pianta per compilare la sua scheda botanica e iniziare a curarla.</p>
+      <button type="button" class="btn btn-primary" (click)="navigateToCreate()">
+        Aggiungi la prima Pianta
+      </button>
+    </div>
+  } @else {
+    <div class="grid-layout">
+      @for (plant of filteredPlants(); track plant.id) {
+        <app-card
+          [title]="plant.commonName"
+          [subtitle]="plant.scientificName"
+          [imageUrl]="getPlantCoverUrl(plant)"
+          [statusBadge]="getInstanceBadge(plant)"
+          [statusVariant]="plant.roomPlants?.length ? 'success' : 'default'"
+          [showActions]="true"
+          [quickActionLabel]="'Colloca in stanza'"
+          [quickActionIcon]="'plus'"
+          [quickActionVariant]="'secondary'"
+          (cardClick)="navigateToDetail(plant.id)"
+          (quickAction)="openAddToRoom(plant)"
+          (edit)="navigateToEdit(plant.id)"
+          (delete)="confirmDeletePlant(plant)"
+        />
+      }
+    </div>
+  }
+</div>

@@ -20,11 +20,17 @@ export class SpacesService {
   ) {}
 
   async findAll(userId: string): Promise<Space[]> {
-    return this.spacesRepo.find({
+    const spaces = await this.spacesRepo.find({
       where: { userId },
       relations: { rooms: true },
-      order: { createdAt: 'DESC' },
+      order: { name: 'ASC' },
     });
+    for (const space of spaces) {
+      if (space.rooms) {
+        space.rooms.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      }
+    }
+    return spaces;
   }
 
   async findOne(userId: string, id: string): Promise<Space> {
@@ -34,6 +40,18 @@ export class SpacesService {
     });
     if (!space) {
       throw new NotFoundException(`Space ${id} not found`);
+    }
+    if (space.rooms) {
+      space.rooms.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      for (const room of space.rooms) {
+        if (room.roomPlants) {
+          room.roomPlants.sort((a, b) =>
+            (a.plant?.commonName || a.plant?.scientificName || '').localeCompare(
+              b.plant?.commonName || b.plant?.scientificName || '',
+            ),
+          );
+        }
+      }
     }
     return space;
   }

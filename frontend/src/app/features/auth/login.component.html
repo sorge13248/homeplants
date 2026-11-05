@@ -1,0 +1,51 @@
+<div class="login-wrapper">
+  <div class="glass-modal login-card">
+    <div class="logo-badge">🌿</div>
+    <h1 class="brand-title">HomePlants</h1>
+    <p class="brand-subtitle">
+      La tua oasi botanica digitale per monitorare e curare le piante di casa e giardino.
+    </p>
+
+    <div class="card-content">
+      @if (errorMessage()) {
+        <div class="error-banner">
+          {{ errorMessage() }}
+        </div>
+      }
+
+      <button
+        type="button"
+        class="btn btn-primary btn-block btn-lg"
+        [disabled]="loading()"
+        (click)="handleLogin()"
+      >
+        @if (loading()) {
+          <span class="spinner"></span>
+          <span>Connessione in corso...</span>
+        } @else {
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+            <polyline points="10 17 15 12 10 7"></polyline>
+            <line x1="15" y1="12" x2="3" y2="12"></line>
+          </svg>
+          <span>Accedi a HomePlants</span>
+        }
+      </button>
+
+      <div class="features-list">
+        <div class="feature-item">
+          <span class="feature-icon">💧</span>
+          <span>Monitoraggio innaffiature e promemoria quotidiani</span>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">🏡</span>
+          <span>Spazi, stanze e schede botaniche stagionali</span>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">🔄</span>
+          <span>Sincronizzazione offline e PWA sempre disponibile</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

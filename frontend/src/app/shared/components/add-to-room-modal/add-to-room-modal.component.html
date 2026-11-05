@@ -1,0 +1,111 @@
+<div class="glass-modal modal-box">
+  <div class="modal-header">
+    <h2>Aggiungi a Stanza</h2>
+    @if (data.plantName) {
+      <p class="subtitle">Stai posizionando: <strong>{{ data.plantName }}</strong></p>
+    }
+  </div>
+
+  <div class="modal-body">
+    <!-- Step 1: Selezione Spazio (se non preimpostato) -->
+    @if (!data.spaceId) {
+      <div class="form-group">
+        <label>1. Seleziona lo Spazio Verde</label>
+        <select
+          class="input-field select-field"
+          [ngModel]="selectedSpaceId()"
+          (ngModelChange)="onSpaceChange($event)"
+        >
+          <option value="" disabled selected>-- Scegli uno spazio --</option>
+          @for (space of spaces(); track space.id) {
+            <option [value]="space.id">{{ space.name }}</option>
+          }
+        </select>
+      </div>
+    }
+
+    <!-- Step 2: Selezione Stanza (se non preimpostata) -->
+    @if (!data.roomId) {
+      <div class="form-group">
+        <label>2. Seleziona la Stanza</label>
+        <select
+          class="input-field select-field"
+          [disabled]="!selectedSpaceId()"
+          [(ngModel)]="selectedRoomId"
+        >
+          <option value="" disabled selected>-- Scegli una stanza --</option>
+          @for (room of filteredRooms(); track room.id) {
+            <option [value]="room.id">{{ room.name }}</option>
+          }
+        </select>
+      </div>
+    }
+
+    <!-- Selezione Pianta (se aperta da dentro una stanza) -->
+    @if (!data.plantId) {
+      <div class="form-group">
+        <label>Seleziona la Pianta dal Catalogo</label>
+        <select class="input-field select-field" [(ngModel)]="selectedPlantId">
+          <option value="" disabled selected>-- Scegli una pianta --</option>
+          @for (plant of plants(); track plant.id) {
+            <option [value]="plant.id">{{ plant.commonName }}</option>
+          }
+        </select>
+      </div>
+    }
+
+    <!-- Step 3: Posizione e informazioni specifiche -->
+    <div class="form-group">
+      <label>Posizione nella stanza</label>
+      <input
+        type="text"
+        class="input-field"
+        placeholder="es. Sul davanzale a est, mensola in alto..."
+        [(ngModel)]="position"
+      />
+    </div>
+
+    <div class="form-group">
+      <label class="checkbox-label">
+        <input type="checkbox" [(ngModel)]="wateredToday" />
+        <span>La pianta è stata innaffiata oggi</span>
+      </label>
+    </div>
+
+    <div class="form-group">
+      <label>Frequenza personalizzata per questa stanza (giorni, facoltativo)</label>
+      <input
+        type="number"
+        min="1"
+        max="60"
+        class="input-field"
+        placeholder="Lascia vuoto per ereditare dalla pianta"
+        [(ngModel)]="customFrequencyDays"
+      />
+    </div>
+
+    <div class="form-group">
+      <label>Note aggiuntive (facoltativo)</label>
+      <textarea
+        class="input-field"
+        rows="2"
+        placeholder="es. Esposizione a correnti, vaso in terracotta..."
+        [(ngModel)]="notes"
+      ></textarea>
+    </div>
+  </div>
+
+  <div class="modal-footer">
+    <button type="button" class="btn btn-outline" (click)="cancel()">
+      Annulla
+    </button>
+    <button
+      type="button"
+      class="btn btn-primary"
+      [disabled]="!canSubmit()"
+      (click)="submit()"
+    >
+      Aggiungi alla stanza
+    </button>
+  </div>
+</div>

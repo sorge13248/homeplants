@@ -16,180 +16,8 @@ import { AddToRoomModalComponent } from '../../../../shared/components/add-to-ro
   selector: 'app-plant-catalog',
   standalone: true,
   imports: [CommonModule, FormsModule, AppCardComponent],
-  template: `
-    <div class="page-container">
-      <!-- Header -->
-      <div class="page-header">
-        <div>
-          <h1 class="page-title">Catalogo Piante</h1>
-          <p class="page-subtitle">
-            Il tuo erbario personale con schede botaniche, consigli stagionali e requisiti di cura.
-          </p>
-        </div>
-        <button type="button" class="btn btn-primary" (click)="navigateToCreate()">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
-          <span>Nuova Pianta</span>
-        </button>
-      </div>
-
-      <!-- Filters & Search -->
-      <div class="filters-bar">
-        <div class="search-box">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
-          <input
-            type="text"
-            class="search-input"
-            placeholder="Cerca per nome comune o botanico (es: Monstera, Ficus, Orchidea)..."
-            [(ngModel)]="searchQuery"
-          />
-        </div>
-      </div>
-
-      <!-- Catalog Grid -->
-      @if (loading()) {
-        <div class="loading-state">
-          <div class="spinner"></div>
-          <p>Caricamento catalogo...</p>
-        </div>
-      } @else if (filteredPlants().length === 0) {
-        <div class="empty-state glass-panel">
-          <div class="empty-icon">🪴</div>
-          <h3>Nessuna pianta trovata nel catalogo</h3>
-          <p>Aggiungi la prima pianta per compilare la sua scheda botanica e iniziare a curarla.</p>
-          <button type="button" class="btn btn-primary" (click)="navigateToCreate()">
-            Aggiungi la prima Pianta
-          </button>
-        </div>
-      } @else {
-        <div class="grid-layout">
-          @for (plant of filteredPlants(); track plant.id) {
-            <app-card
-              [title]="plant.commonName"
-              [subtitle]="plant.scientificName"
-              [imageUrl]="getPlantCoverUrl(plant)"
-              [statusBadge]="getInstanceBadge(plant)"
-              [statusVariant]="plant.roomPlants?.length ? 'success' : 'default'"
-              [showActions]="true"
-              [quickActionLabel]="'Colloca in stanza'"
-              [quickActionIcon]="'plus'"
-              [quickActionVariant]="'secondary'"
-              (cardClick)="navigateToDetail(plant.id)"
-              (quickAction)="openAddToRoom(plant)"
-              (edit)="navigateToEdit(plant.id)"
-              (delete)="confirmDeletePlant(plant)"
-            />
-          }
-        </div>
-      }
-    </div>
-  `,
-  styles: [`
-    .page-container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 2rem 1.5rem;
-    }
-    .page-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1.5rem;
-      margin-bottom: 2rem;
-      flex-wrap: wrap;
-    }
-    .page-title {
-      font-size: 2.2rem;
-      font-weight: 800;
-      color: var(--text-main);
-      margin: 0 0 0.4rem 0;
-      letter-spacing: -0.02em;
-    }
-    .page-subtitle {
-      font-size: 1rem;
-      color: var(--text-muted);
-      margin: 0;
-    }
-    .filters-bar {
-      margin-bottom: 2rem;
-    }
-    .search-box {
-      position: relative;
-      max-width: 500px;
-      display: flex;
-      align-items: center;
-    }
-    .search-box svg {
-      position: absolute;
-      left: 1rem;
-      color: var(--text-muted);
-      pointer-events: none;
-    }
-    .search-input {
-      width: 100%;
-      padding: 0.75rem 1rem 0.75rem 2.8rem;
-      border-radius: var(--radius-full);
-      border: 1px solid var(--border-subtle);
-      background: var(--bg-surface);
-      color: var(--text-main);
-      font-size: 0.95rem;
-      box-shadow: var(--shadow-sm);
-      outline: none;
-      transition: all 0.2s ease;
-    }
-    .search-input:focus {
-      border-color: var(--color-primary);
-      box-shadow: 0 0 0 3px var(--color-primary-subtle);
-    }
-    .grid-layout {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
-      gap: 1.75rem;
-    }
-    .empty-state {
-      padding: 4rem 2rem;
-      text-align: center;
-      max-width: 500px;
-      margin: 2rem auto;
-      border-radius: var(--radius-lg);
-    }
-    .empty-icon {
-      font-size: 3.5rem;
-      margin-bottom: 1rem;
-    }
-    .empty-state h3 {
-      font-size: 1.35rem;
-      color: var(--text-main);
-      margin: 0 0 0.5rem 0;
-    }
-    .empty-state p {
-      color: var(--text-muted);
-      margin: 0 0 1.5rem 0;
-      line-height: 1.5;
-    }
-    .loading-state {
-      text-align: center;
-      padding: 4rem 0;
-      color: var(--text-muted);
-    }
-    .spinner {
-      margin: 0 auto 1rem;
-      width: 36px;
-      height: 36px;
-      border: 3px solid rgba(16, 185, 129, 0.2);
-      border-top-color: var(--color-primary);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-  `],
+  templateUrl: './plant-catalog.component.html',
+  styleUrl: './plant-catalog.component.scss',
 })
 export class PlantCatalogComponent implements OnInit {
   private readonly storage = inject(OfflineStorageService);
@@ -223,6 +51,7 @@ export class PlantCatalogComponent implements OnInit {
         p.roomPlants = allRoomPlants.filter((rp) => rp.plantId === p.id);
       }
 
+      list.sort((a, b) => (a.commonName || '').localeCompare(b.commonName || ''));
       this.plants.set(list);
 
       if (list.length === 0 && !this.initialLoaded && !this.syncService.checkIsOffline()) {
@@ -238,12 +67,14 @@ export class PlantCatalogComponent implements OnInit {
 
   filteredPlants(): PlantItem[] {
     const q = this.searchQuery.toLowerCase().trim();
-    if (!q) return this.plants();
-    return this.plants().filter(
-      (p) =>
-        p.commonName.toLowerCase().includes(q) ||
-        (p.scientificName && p.scientificName.toLowerCase().includes(q)),
-    );
+    const list = !q
+      ? this.plants()
+      : this.plants().filter(
+          (p) =>
+            p.commonName.toLowerCase().includes(q) ||
+            (p.scientificName && p.scientificName.toLowerCase().includes(q)),
+        );
+    return [...list].sort((a, b) => (a.commonName || '').localeCompare(b.commonName || ''));
   }
 
   getPlantCoverUrl(plant: PlantItem): string | null {

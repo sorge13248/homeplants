@@ -73,11 +73,16 @@ export class RoomPlantsService {
     if (roomId) {
       where.roomId = roomId;
     }
-    return this.roomPlantsRepo.find({
+    const list = await this.roomPlantsRepo.find({
       where,
       relations: { room: { space: true }, plant: { attachments: true }, wateringLogs: true },
       order: { createdAt: 'DESC' },
     });
+    return list.sort((a, b) =>
+      (a.plant?.commonName || a.plant?.scientificName || '').localeCompare(
+        b.plant?.commonName || b.plant?.scientificName || '',
+      ),
+    );
   }
 
   async findOne(userId: string, id: string): Promise<RoomPlant> {
