@@ -1,0 +1,27 @@
+services:
+  homeplants:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/sorge13248/homeplants
+    container_name: homeplants
+    env_file:
+      - .env
+    environment:
+      APP_PORT: 8080
+      DB_PATH: /app/data/homeplants.sqlite
+      UPLOADS_DIR: /app/data/uploads
+    ports:
+      - "8080:8080"
+    volumes:
+      - homeplants-backend-data:/app/data
+      - ./config.json:/usr/share/nginx/html/config.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  homeplants-backend-data:
+

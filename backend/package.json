@@ -1,0 +1,42 @@
+{
+  "name": "homeplants-backend",
+  "private": true,
+  "version": "1.0.0",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "build": "nest build",
+    "start:dev": "nest start --watch",
+    "start": "node dist/main.js",
+    "lint": "eslint \"src/**/*.ts\"",
+    "test": "tsx --tsconfig tsconfig.json src/services/sync.service.spec.ts && tsx --tsconfig tsconfig.json src/services/quick-action.service.spec.ts && tsx --tsconfig tsconfig.json src/services/attachments.service.spec.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^12.2.0",
+    "@nestjs/core": "^12.2.0",
+    "@nestjs/platform-express": "^12.2.0",
+    "@nestjs/typeorm": "^12.0.2",
+    "better-sqlite3": "^12.11.1",
+    "dotenv": "^18.0.9",
+    "jose": "^6.2.13",
+    "nodemailer": "^6.10.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "sharp": "^0.35.5",
+    "typeorm": "^1.1.2"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^12.0.10",
+    "@nestjs/schematics": "^12.0.0",
+    "@types/node": "^22.15.30",
+    "@types/express": "^5.0.0",
+    "@types/multer": "^1.4.12",
+    "@types/nodemailer": "^6.4.17",
+    "eslint": "^10.13.0",
+    "tsx": "^4.23.15",
+    "typeorm-extension": "^4.3.0",
+    "typescript": "^6.0.3"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
+  }
+}
