@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="favBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f3024"/>
+      <stop offset="50%" stop-color="#091c15"/>
+      <stop offset="100%" stop-color="#040d0a"/>
+    </linearGradient>
+
+    <linearGradient id="favBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0.15"/>
+    </linearGradient>
+
+    <radialGradient id="favHalo" cx="50%" cy="50%" r="52%">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.4"/>
+      <stop offset="65%" stop-color="#10b981" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="favLargeLeaf" x1="15%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0%" stop-color="#6ee7b7"/>
+      <stop offset="25%" stop-color="#34d399"/>
+      <stop offset="70%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#047857"/>
+    </linearGradient>
+
+    <linearGradient id="favSmallLeaf" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a7f3d0"/>
+      <stop offset="35%" stop-color="#34d399"/>
+      <stop offset="85%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#064e3b"/>
+    </linearGradient>
+
+    <linearGradient id="favStem" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="50%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#064e3b"/>
+    </linearGradient>
+
+    <filter id="favShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <!-- Squircle Base -->
+  <rect x="8" y="8" width="496" height="496" rx="112" fill="url(#favBg)" stroke="url(#favBorder)" stroke-width="12"/>
+  <circle cx="256" cy="256" r="200" fill="url(#favHalo)"/>
+
+  <!-- Plant Artwork -->
+  <g transform="translate(256, 256) scale(0.92) translate(-256, -256)" filter="url(#favShadow)">
+    <path d="M 235 415 C 240 350, 252 290, 275 235 C 285 210, 295 180, 305 140"
+          stroke="url(#favStem)" stroke-width="16" stroke-linecap="round"/>
+    <path d="M 248 335 C 210 325, 140 295, 115 230 C 102 195, 118 165, 146 160 C 178 154, 218 185, 245 228 C 260 252, 268 285, 258 325 Z"
+          fill="url(#favSmallLeaf)"/>
+    <path d="M 246 322 C 220 288, 185 240, 134 185" stroke="#065f46" stroke-width="5" stroke-linecap="round" opacity="0.55"/>
+    <path d="M 265 265 C 295 245, 360 215, 395 155 C 416 120, 408 86, 386 80 C 362 74, 322 100, 288 145 C 256 186, 246 238, 255 285 Z"
+          fill="url(#favLargeLeaf)"/>
+    <path d="M 260 268 C 285 215, 330 155, 385 86" stroke="#064e3b" stroke-width="5.5" stroke-linecap="round" opacity="0.5"/>
+    <ellipse cx="360" cy="120" rx="9" ry="13" transform="rotate(30 360 120)" fill="#ffffff" opacity="0.9"/>
+    <ellipse cx="358" cy="117" rx="4" ry="5.5" transform="rotate(30 358 117)" fill="#ffffff"/>
+    <path d="M 246 290 C 240 260, 246 230, 260 205 C 265 196, 274 195, 276 204 C 278 215, 272 235, 265 258 Z"
+          fill="url(#favSmallLeaf)"/>
+  </g>
+</svg>

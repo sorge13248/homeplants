@@ -1,9 +1,12 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Dialog } from '@angular/cdk/dialog';
+import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../../../core/api.service';
+import { OfflineStorageService } from '../../../../core/offline-storage.service';
+import { SyncService } from '../../../../core/sync.service';
 import { MapProviderService } from '../../../../core/map-provider.service';
 import { ToastService } from '../../../../core/toast.service';
 import { RoomItem, SpaceItem, UserSettings } from '../../../../core/models';
@@ -433,6 +436,8 @@ export class SpaceDetailComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly api = inject(ApiService);
+  private readonly storage = inject(OfflineStorageService);
+  private readonly syncService = inject(SyncService);
   private readonly mapProvider = inject(MapProviderService);
   private readonly toast = inject(ToastService);
   private readonly dialog = inject(Dialog);
@@ -449,6 +454,7 @@ export class SpaceDetailComponent implements OnInit {
   currentEditingRoomId: string | null = null;
 
   userSettings: UserSettings | null = null;
+  private initialLoaded = false;
 
   roomFormData: {
     name: string;
@@ -460,45 +466,63 @@ export class SpaceDetailComponent implements OnInit {
     coverPhotoUrl: null,
   };
 
-  ngOnInit() {
-    this.route.paramMap.subscribe((params) => {
-      this.spaceId = params.get('id')!;
+  constructor() {
+    effect(() => {
+      this.syncService.dataUpdated();
       if (this.spaceId) {
-        this.loadData();
+        void this.loadData();
       }
     });
   }
 
-  loadData() {
-    this.loading.set(true);
-    this.api.getSettings().subscribe({
-      next: (s) => (this.userSettings = s),
-    });
-
-    this.api.getSpace(this.spaceId).subscribe({
-      next: (sp) => {
-        this.space.set(sp);
-        this.loadRooms();
-      },
-      error: () => {
-        this.toast.error('Spazio non trovato');
-        this.loading.set(false);
-        this.router.navigate(['/spaces']);
-      },
+  ngOnInit() {
+    this.route.paramMap.subscribe((params) => {
+      this.spaceId = params.get('id')!;
+      if (this.spaceId) {
+        void this.loadData();
+      }
     });
   }
 
-  loadRooms() {
-    this.api.getRooms(this.spaceId).subscribe({
-      next: (rooms) => {
+  async loadData() {
+    try {
+      this.userSettings = (await this.storage.getSettings()) || null;
+      const sp = await this.storage.getSpace(this.spaceId);
+
+      if (sp) {
+        this.space.set(sp);
+        const rooms = await this.storage.getRoomsBySpace(this.spaceId);
         this.rooms.set(rooms);
         this.loading.set(false);
-      },
-      error: () => {
-        this.toast.error('Errore nel caricamento delle stanze');
-        this.loading.set(false);
-      },
-    });
+        return;
+      }
+
+      if (!this.initialLoaded && !this.syncService.checkIsOffline()) {
+        this.initialLoaded = true;
+        await this.syncService.sync(true);
+        const refreshedSp = await this.storage.getSpace(this.spaceId);
+        if (refreshedSp) {
+          this.space.set(refreshedSp);
+          const rms = await this.storage.getRoomsBySpace(this.spaceId);
+          this.rooms.set(rms);
+          this.loading.set(false);
+          return;
+        }
+      }
+
+      this.toast.error('Spazio non trovato');
+      this.router.navigate(['/spaces']);
+    } catch {
+      // Local storage read error
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  async loadRooms() {
+    if (!this.spaceId) return;
+    const rooms = await this.storage.getRoomsBySpace(this.spaceId);
+    this.rooms.set(rooms);
   }
 
   getMapLink(location?: string | null): string | null {
@@ -565,10 +589,11 @@ export class SpaceDetailComponent implements OnInit {
     });
   }
 
-  saveRoom() {
+  async saveRoom() {
     if (!this.roomFormData.name.trim()) return;
 
     this.savingRoom.set(true);
+    const now = new Date().toISOString();
     const payload: Partial<RoomItem> = {
       spaceId: this.spaceId,
       name: this.roomFormData.name.trim(),
@@ -577,37 +602,44 @@ export class SpaceDetailComponent implements OnInit {
     };
 
     if (this.isEditingRoom() && this.currentEditingRoomId) {
-      this.api.updateRoom(this.currentEditingRoomId, payload).subscribe({
-        next: (updated) => {
-          this.rooms.update((list) =>
-            list.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)),
-          );
-          this.toast.success('Stanza aggiornata');
-          this.savingRoom.set(false);
-          this.closeRoomModal();
-        },
-        error: () => {
-          this.toast.error('Errore aggiornamento stanza');
-          this.savingRoom.set(false);
-        },
-      });
+      const existing = await this.storage.getRoom(this.currentEditingRoomId);
+      const updated: RoomItem = {
+        ...(existing ?? ({} as RoomItem)),
+        id: this.currentEditingRoomId,
+        spaceId: this.spaceId,
+        name: payload.name!,
+        description: payload.description ?? null,
+        coverPhotoUrl: payload.coverPhotoUrl ?? null,
+        updatedAt: now,
+      };
+      await this.storage.saveRooms([updated]);
+      await this.syncService.queueRoomChange(this.currentEditingRoomId, 'update', payload);
+
+      this.toast.success('Stanza aggiornata');
+      this.savingRoom.set(false);
+      this.closeRoomModal();
     } else {
-      this.api.createRoom(payload).subscribe({
-        next: (created) => {
-          this.rooms.update((list) => [...list, created]);
-          this.toast.success('Nuova stanza creata');
-          this.savingRoom.set(false);
-          this.closeRoomModal();
-        },
-        error: () => {
-          this.toast.error('Errore creazione stanza');
-          this.savingRoom.set(false);
-        },
-      });
+      const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `room_${Date.now()}`;
+      const newRoom: RoomItem = {
+        id,
+        spaceId: this.spaceId,
+        name: payload.name!,
+        description: payload.description ?? null,
+        coverPhotoUrl: payload.coverPhotoUrl ?? null,
+        roomPlants: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      await this.storage.saveRooms([newRoom]);
+      await this.syncService.queueRoomChange(id, 'create', newRoom);
+
+      this.toast.success('Nuova stanza creata');
+      this.savingRoom.set(false);
+      this.closeRoomModal();
     }
   }
 
-  confirmDeleteRoom(room: RoomItem) {
+  async confirmDeleteRoom(room: RoomItem) {
     const dialogRef = this.dialog.open<boolean>(ConfirmModalComponent, {
       data: {
         title: `Elimina stanza "${room.name}"?`,
@@ -618,19 +650,16 @@ export class SpaceDetailComponent implements OnInit {
       },
     });
 
-    dialogRef.closed.subscribe((confirmed) => {
-      if (confirmed) {
-        this.api.deleteRoom(room.id).subscribe({
-          next: () => {
-            this.rooms.update((list) => list.filter((r) => r.id !== room.id));
-            this.toast.success('Stanza eliminata');
-          },
-          error: () => {
-            this.toast.error('Errore eliminazione stanza');
-          },
-        });
+    const confirmed = await firstValueFrom(dialogRef.closed);
+    if (confirmed) {
+      await this.storage.removeRooms([room.id]);
+      const rps = await this.storage.getRoomPlantsByRoom(room.id);
+      if (rps.length) {
+        await this.storage.removeRoomPlants(rps.map((p) => p.id));
       }
-    });
+      await this.syncService.queueRoomChange(room.id, 'delete');
+      this.toast.success('Stanza eliminata');
+    }
   }
 }
 

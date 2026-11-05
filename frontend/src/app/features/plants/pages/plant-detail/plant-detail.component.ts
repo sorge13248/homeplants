@@ -1,8 +1,10 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Dialog } from '@angular/cdk/dialog';
-import { ApiService } from '../../../../core/api.service';
+import { firstValueFrom } from 'rxjs';
+import { OfflineStorageService } from '../../../../core/offline-storage.service';
+import { SyncService } from '../../../../core/sync.service';
 import { ToastService } from '../../../../core/toast.service';
 import { PlantItem } from '../../../../core/models';
 import { SeasonTabsComponent } from '../../../../shared/components/season-tabs/season-tabs.component';
@@ -482,7 +484,8 @@ import { AddToRoomModalComponent } from '../../../../shared/components/add-to-ro
 export class PlantDetailComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly api = inject(ApiService);
+  private readonly storage = inject(OfflineStorageService);
+  private readonly syncService = inject(SyncService);
   private readonly toast = inject(ToastService);
   private readonly dialog = inject(Dialog);
 
@@ -490,29 +493,66 @@ export class PlantDetailComponent implements OnInit {
   readonly plant = signal<PlantItem | null>(null);
   readonly loading = signal(true);
   selectedImageUrl: string | null = null;
+  private initialLoaded = false;
+
+  constructor() {
+    effect(() => {
+      this.syncService.dataUpdated();
+      if (this.plantId) {
+        void this.loadPlant();
+      }
+    });
+  }
 
   ngOnInit() {
     this.route.paramMap.subscribe((params) => {
       this.plantId = params.get('id')!;
       if (this.plantId) {
-        this.loadPlant();
+        void this.loadPlant();
       }
     });
   }
 
-  loadPlant() {
-    this.loading.set(true);
-    this.api.getPlant(this.plantId).subscribe({
-      next: (pl) => {
+  async loadPlant() {
+    try {
+      const pl = await this.storage.getPlant(this.plantId);
+      if (pl) {
+        const rps = await this.storage.getRoomPlantsByPlant(this.plantId);
+        const allRooms = await this.storage.getAllRooms();
+        const allSpaces = await this.storage.getAllSpaces();
+
+        for (const rp of rps) {
+          rp.room = allRooms.find((r) => r.id === rp.roomId);
+          if (rp.room) {
+            rp.room.space = allSpaces.find((s) => s.id === rp.room!.spaceId);
+          }
+        }
+        pl.roomPlants = rps;
         this.plant.set(pl);
         this.loading.set(false);
-      },
-      error: () => {
-        this.toast.error('Pianta non trovata');
-        this.loading.set(false);
-        this.router.navigate(['/plants']);
-      },
-    });
+        return;
+      }
+
+      if (!this.initialLoaded && !this.syncService.checkIsOffline()) {
+        this.initialLoaded = true;
+        await this.syncService.sync(true);
+        const refreshedPl = await this.storage.getPlant(this.plantId);
+        if (refreshedPl) {
+          const rps = await this.storage.getRoomPlantsByPlant(this.plantId);
+          refreshedPl.roomPlants = rps;
+          this.plant.set(refreshedPl);
+          this.loading.set(false);
+          return;
+        }
+      }
+
+      this.toast.error('Pianta non trovata');
+      this.router.navigate(['/plants']);
+    } catch {
+      // Local storage read error
+    } finally {
+      this.loading.set(false);
+    }
   }
 
   getCoverImage(pl: PlantItem): string | null {
@@ -549,7 +589,7 @@ export class PlantDetailComponent implements OnInit {
 
     dialogRef.closed.subscribe((result) => {
       if (result) {
-        this.loadPlant();
+        void this.loadPlant();
       }
     });
   }
@@ -558,7 +598,7 @@ export class PlantDetailComponent implements OnInit {
     this.router.navigate(['/plants', id, 'edit']);
   }
 
-  confirmDelete(pl: PlantItem) {
+  async confirmDelete(pl: PlantItem) {
     const dialogRef = this.dialog.open<boolean>(ConfirmModalComponent, {
       data: {
         title: `Eliminare "${pl.commonName}" dal catalogo?`,
@@ -569,19 +609,17 @@ export class PlantDetailComponent implements OnInit {
       },
     });
 
-    dialogRef.closed.subscribe((confirmed) => {
-      if (confirmed) {
-        this.api.deletePlant(pl.id).subscribe({
-          next: () => {
-            this.toast.success('Pianta eliminata dal catalogo');
-            this.router.navigate(['/plants']);
-          },
-          error: () => {
-            this.toast.error('Errore durante l’eliminazione');
-          },
-        });
+    const confirmed = await firstValueFrom(dialogRef.closed);
+    if (confirmed) {
+      await this.storage.removePlants([pl.id]);
+      const rps = await this.storage.getRoomPlantsByPlant(pl.id);
+      if (rps.length) {
+        await this.storage.removeRoomPlants(rps.map((p) => p.id));
       }
-    });
+      await this.syncService.queuePlantChange(pl.id, 'delete');
+      this.toast.success('Pianta eliminata dal catalogo');
+      this.router.navigate(['/plants']);
+    }
   }
 }
 

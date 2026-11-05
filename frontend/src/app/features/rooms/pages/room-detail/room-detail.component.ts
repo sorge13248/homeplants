@@ -1,11 +1,14 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Dialog } from '@angular/cdk/dialog';
-import { ApiService } from '../../../../core/api.service';
+import { firstValueFrom } from 'rxjs';
+import { OfflineStorageService } from '../../../../core/offline-storage.service';
+import { SyncService } from '../../../../core/sync.service';
 import { ToastService } from '../../../../core/toast.service';
-import { RoomItem, RoomPlantItem, SpaceItem } from '../../../../core/models';
+import { RoomItem, RoomPlantItem, SpaceItem, WateringLogItem } from '../../../../core/models';
+import { computeNextWateringDate, getWateringFrequencyDays } from '../../../../core/watering.utils';
 import { ConfirmModalComponent } from '../../../../shared/components/confirm-modal/confirm-modal.component';
 import { AddToRoomModalComponent } from '../../../../shared/components/add-to-room-modal/add-to-room-modal.component';
 
@@ -671,7 +674,8 @@ import { AddToRoomModalComponent } from '../../../../shared/components/add-to-ro
 export class RoomDetailComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly api = inject(ApiService);
+  private readonly storage = inject(OfflineStorageService);
+  private readonly syncService = inject(SyncService);
   private readonly toast = inject(ToastService);
   private readonly dialog = inject(Dialog);
 
@@ -689,6 +693,7 @@ export class RoomDetailComponent implements OnInit {
   readonly showEditModal = signal(false);
   readonly savingInstance = signal(false);
   currentEditingInstance: RoomPlantItem | null = null;
+  private initialLoaded = false;
 
   editFormData = {
     position: '',
@@ -696,12 +701,21 @@ export class RoomDetailComponent implements OnInit {
     notes: '',
   };
 
+  constructor() {
+    effect(() => {
+      this.syncService.dataUpdated();
+      if (this.roomId) {
+        void this.loadData();
+      }
+    });
+  }
+
   ngOnInit() {
     this.route.paramMap.subscribe((params) => {
       this.spaceId = params.get('id')!;
       this.roomId = params.get('roomId')!;
       if (this.spaceId && this.roomId) {
-        this.loadData();
+        void this.loadData();
       }
     });
 
@@ -713,36 +727,55 @@ export class RoomDetailComponent implements OnInit {
     }
   }
 
-  loadData() {
-    this.loading.set(true);
-    this.api.getSpace(this.spaceId).subscribe({
-      next: (sp) => this.space.set(sp),
-    });
+  async loadData() {
+    try {
+      const sp = await this.storage.getSpace(this.spaceId);
+      this.space.set(sp);
 
-    this.api.getRoom(this.roomId).subscribe({
-      next: (rm) => {
+      const rm = await this.storage.getRoom(this.roomId);
+      if (rm) {
         this.room.set(rm);
-        this.loadRoomPlants();
-      },
-      error: () => {
-        this.toast.error('Stanza non trovata');
+        await this.loadRoomPlants();
         this.loading.set(false);
-        this.router.navigate(['/spaces', this.spaceId]);
-      },
-    });
+        return;
+      }
+
+      if (!this.initialLoaded && !this.syncService.checkIsOffline()) {
+        this.initialLoaded = true;
+        await this.syncService.sync(true);
+        const refreshedRm = await this.storage.getRoom(this.roomId);
+        if (refreshedRm) {
+          this.room.set(refreshedRm);
+          const refreshedSp = await this.storage.getSpace(this.spaceId);
+          this.space.set(refreshedSp);
+          await this.loadRoomPlants();
+          this.loading.set(false);
+          return;
+        }
+      }
+
+      this.toast.error('Stanza non trovata');
+      this.router.navigate(['/spaces', this.spaceId]);
+    } catch {
+      // Local storage read error
+    } finally {
+      this.loading.set(false);
+    }
   }
 
-  loadRoomPlants() {
-    this.api.getRoomPlants(this.roomId).subscribe({
-      next: (plants) => {
-        this.roomPlants.set(plants);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.toast.error('Errore nel caricamento delle piante della stanza');
-        this.loading.set(false);
-      },
-    });
+  async loadRoomPlants() {
+    try {
+      const plants = await this.storage.getRoomPlantsByRoom(this.roomId);
+      for (const rp of plants) {
+        const plant = await this.storage.getPlant(rp.plantId);
+        if (plant) {
+          rp.plant = plant;
+        }
+      }
+      this.roomPlants.set(plants);
+    } catch {
+      // Local storage read error
+    }
   }
 
   filteredPlants(): RoomPlantItem[] {
@@ -826,39 +859,62 @@ export class RoomDetailComponent implements OnInit {
     this.activeSnoozeId = this.activeSnoozeId === id ? null : id;
   }
 
-  snoozePlant(rpId: string, hours: number) {
-    this.api.snoozeRoomPlant(rpId, hours).subscribe({
-      next: (updated) => {
-        this.roomPlants.update((list) =>
-          list.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)),
-        );
-        this.toast.success(`Innaffiatura posticipata di ${hours} ore`);
-        this.activeSnoozeId = null;
-      },
-      error: () => {
-        this.toast.error('Errore durante il posticipo');
-      },
-    });
+  async snoozePlant(rpId: string, hours: number) {
+    const rp = this.roomPlants().find((p) => p.id === rpId);
+    if (!rp) return;
+
+    const snoozedUntil = new Date(Date.now() + hours * 3600000).toISOString();
+    const updated: RoomPlantItem = {
+      ...rp,
+      snoozedUntil,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.storage.saveRoomPlants([updated]);
+    await this.syncService.queueRoomPlantChange(rpId, 'update', { snoozedUntil });
+
+    this.toast.success(`Innaffiatura posticipata di ${hours} ore`);
+    this.activeSnoozeId = null;
   }
 
-  waterPlant(rp: RoomPlantItem) {
+  async waterPlant(rp: RoomPlantItem) {
     this.wateringPlantId = rp.id;
-    this.api.waterRoomPlant(rp.id).subscribe({
-      next: (updated) => {
-        this.roomPlants.update((list) =>
-          list.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)),
-        );
-        this.toast.success(`💧 Innaffiata con successo: ${rp.plant?.commonName}`);
-        this.wateringPlantId = null;
-      },
-      error: () => {
-        this.toast.error('Errore durante la registrazione dell’innaffiatura');
-        this.wateringPlantId = null;
-      },
-    });
+    try {
+      const now = new Date().toISOString();
+      const freq = getWateringFrequencyDays(rp.plant, rp.customFrequencyDays);
+      const nextDue = computeNextWateringDate(now, freq);
+
+      const updated: RoomPlantItem = {
+        ...rp,
+        lastWateredAt: now,
+        nextWateringDueAt: nextDue,
+        snoozedUntil: null,
+        updatedAt: now,
+      };
+
+      await this.storage.saveRoomPlants([updated]);
+
+      const log: WateringLogItem = {
+        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `log_${Date.now()}`,
+        roomPlantId: rp.id,
+        wateredAt: now,
+        notes: null,
+        source: 'web',
+      };
+      await this.syncService.queueWateringLog(log);
+      await this.syncService.queueRoomPlantChange(rp.id, 'update', {
+        lastWateredAt: now,
+        nextWateringDueAt: nextDue,
+        snoozedUntil: null,
+      });
+
+      this.toast.success(`💧 Innaffiata con successo: ${rp.plant?.commonName || 'Pianta'}`);
+    } finally {
+      this.wateringPlantId = null;
+    }
   }
 
-  confirmWaterAll() {
+  async confirmWaterAll() {
     const count = this.roomPlants().length;
     const dialogRef = this.dialog.open<boolean>(ConfirmModalComponent, {
       data: {
@@ -869,19 +925,42 @@ export class RoomDetailComponent implements OnInit {
       },
     });
 
-    dialogRef.closed.subscribe((confirmed) => {
-      if (confirmed) {
-        this.api.waterAllInRoom(this.roomId).subscribe({
-          next: (updatedList) => {
-            this.roomPlants.set(updatedList);
-            this.toast.success(`💧 Tutte le ${updatedList.length} piante sono state innaffiate!`);
-          },
-          error: () => {
-            this.toast.error('Errore innaffiatura di gruppo');
-          },
-        });
-      }
-    });
+    const confirmed = await firstValueFrom(dialogRef.closed);
+    if (!confirmed) return;
+
+    const now = new Date().toISOString();
+    const updatedList: RoomPlantItem[] = [];
+
+    for (const rp of this.roomPlants()) {
+      const freq = getWateringFrequencyDays(rp.plant, rp.customFrequencyDays);
+      const nextDue = computeNextWateringDate(now, freq);
+
+      const updated: RoomPlantItem = {
+        ...rp,
+        lastWateredAt: now,
+        nextWateringDueAt: nextDue,
+        snoozedUntil: null,
+        updatedAt: now,
+      };
+      updatedList.push(updated);
+
+      const log: WateringLogItem = {
+        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `log_${Date.now()}_${Math.random()}`,
+        roomPlantId: rp.id,
+        wateredAt: now,
+        notes: null,
+        source: 'bulk-room',
+      };
+      await this.syncService.queueWateringLog(log);
+      await this.syncService.queueRoomPlantChange(rp.id, 'update', {
+        lastWateredAt: now,
+        nextWateringDueAt: nextDue,
+        snoozedUntil: null,
+      });
+    }
+
+    await this.storage.saveRoomPlants(updatedList);
+    this.toast.success(`💧 Tutte le ${updatedList.length} piante sono state innaffiate!`);
   }
 
   openAddToRoomModal() {
@@ -894,7 +973,7 @@ export class RoomDetailComponent implements OnInit {
 
     dialogRef.closed.subscribe((res) => {
       if (res) {
-        this.loadRoomPlants();
+        void this.loadRoomPlants();
       }
     });
   }
@@ -913,10 +992,11 @@ export class RoomDetailComponent implements OnInit {
     this.showEditModal.set(false);
   }
 
-  saveInstanceEdit() {
+  async saveInstanceEdit() {
     if (!this.currentEditingInstance) return;
     this.savingInstance.set(true);
 
+    const now = new Date().toISOString();
     const payload: Partial<RoomPlantItem> = {
       position: this.editFormData.position.trim() || null,
       customFrequencyDays: this.editFormData.customFrequencyDays
@@ -925,23 +1005,21 @@ export class RoomDetailComponent implements OnInit {
       notes: this.editFormData.notes.trim() || null,
     };
 
-    this.api.updateRoomPlant(this.currentEditingInstance.id, payload).subscribe({
-      next: (updated) => {
-        this.roomPlants.update((list) =>
-          list.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)),
-        );
-        this.toast.success('Dettagli pianta aggiornati');
-        this.savingInstance.set(false);
-        this.closeEditModal();
-      },
-      error: () => {
-        this.toast.error('Errore aggiornamento');
-        this.savingInstance.set(false);
-      },
-    });
+    const updated: RoomPlantItem = {
+      ...this.currentEditingInstance,
+      ...payload,
+      updatedAt: now,
+    };
+
+    await this.storage.saveRoomPlants([updated]);
+    await this.syncService.queueRoomPlantChange(this.currentEditingInstance.id, 'update', payload);
+
+    this.toast.success('Dettagli pianta aggiornati');
+    this.savingInstance.set(false);
+    this.closeEditModal();
   }
 
-  confirmRemovePlant(rp: RoomPlantItem) {
+  async confirmRemovePlant(rp: RoomPlantItem) {
     const dialogRef = this.dialog.open<boolean>(ConfirmModalComponent, {
       data: {
         title: `Rimuovere ${rp.plant?.commonName || 'pianta'}?`,
@@ -952,19 +1030,12 @@ export class RoomDetailComponent implements OnInit {
       },
     });
 
-    dialogRef.closed.subscribe((confirmed) => {
-      if (confirmed) {
-        this.api.deleteRoomPlant(rp.id).subscribe({
-          next: () => {
-            this.roomPlants.update((list) => list.filter((p) => p.id !== rp.id));
-            this.toast.success('Pianta rimossa dalla stanza');
-          },
-          error: () => {
-            this.toast.error('Errore rimozione pianta');
-          },
-        });
-      }
-    });
+    const confirmed = await firstValueFrom(dialogRef.closed);
+    if (confirmed) {
+      await this.storage.removeRoomPlants([rp.id]);
+      await this.syncService.queueRoomPlantChange(rp.id, 'delete');
+      this.toast.success('Pianta rimossa dalla stanza');
+    }
   }
 
   navigateToPlantCatalog(plantId?: string) {

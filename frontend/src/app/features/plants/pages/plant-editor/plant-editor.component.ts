@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../../../core/api.service';
+import { OfflineStorageService } from '../../../../core/offline-storage.service';
+import { SyncService } from '../../../../core/sync.service';
 import { ToastService } from '../../../../core/toast.service';
 import { AttachmentItem, PlantItem, PlantSeasonalCare } from '../../../../core/models';
 import { SeasonTabsComponent } from '../../../../shared/components/season-tabs/season-tabs.component';
@@ -445,6 +447,8 @@ export class PlantEditorComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly api = inject(ApiService);
+  private readonly storage = inject(OfflineStorageService);
+  private readonly syncService = inject(SyncService);
   private readonly toast = inject(ToastService);
 
   readonly isEditing = signal(false);
@@ -505,42 +509,45 @@ export class PlantEditorComponent implements OnInit {
     });
   }
 
-  loadExistingPlant(id: string) {
+  async loadExistingPlant(id: string) {
     this.loading.set(true);
-    this.api.getPlant(id).subscribe({
-      next: (pl) => {
-        this.plantData.commonName = pl.commonName || '';
-        this.plantData.scientificName = pl.scientificName || '';
-        if (pl.seasonalCare) {
-          this.plantData.seasonalCare = pl.seasonalCare;
-        }
-        if (pl.soilRepotting) {
-          this.plantData.soilRepotting = {
-            repottingSeason: pl.soilRepotting.repottingSeason || 'spring',
-            potType: pl.soilRepotting.potType || '',
-            soilType: pl.soilRepotting.soilType || '',
-            composition: pl.soilRepotting.composition || '',
-          };
-        }
-        if (pl.fertilization) {
-          this.plantData.fertilization = {
-            period: pl.fertilization.period || '',
-            frequencyDays: pl.fertilization.frequencyDays || null,
-            fertilizerType: pl.fertilization.fertilizerType || '',
-            notes: pl.fertilization.notes || '',
-          };
-        }
-        if (pl.attachments) {
-          this.attachments.set(pl.attachments);
-        }
-        this.loading.set(false);
-      },
-      error: () => {
-        this.toast.error('Errore nel caricamento della pianta');
-        this.loading.set(false);
+    try {
+      const pl = await this.storage.getPlant(id);
+      if (!pl) {
+        this.toast.error('Pianta non trovata');
         this.router.navigate(['/plants']);
-      },
-    });
+        return;
+      }
+      this.plantData.commonName = pl.commonName || '';
+      this.plantData.scientificName = pl.scientificName || '';
+      if (pl.seasonalCare) {
+        this.plantData.seasonalCare = pl.seasonalCare;
+      }
+      if (pl.soilRepotting) {
+        this.plantData.soilRepotting = {
+          repottingSeason: pl.soilRepotting.repottingSeason || 'spring',
+          potType: pl.soilRepotting.potType || '',
+          soilType: pl.soilRepotting.soilType || '',
+          composition: pl.soilRepotting.composition || '',
+        };
+      }
+      if (pl.fertilization) {
+        this.plantData.fertilization = {
+          period: pl.fertilization.period || '',
+          frequencyDays: pl.fertilization.frequencyDays || null,
+          fertilizerType: pl.fertilization.fertilizerType || '',
+          notes: pl.fertilization.notes || '',
+        };
+      }
+      if (pl.attachments) {
+        this.attachments.set(pl.attachments);
+      }
+    } catch {
+      this.toast.error('Errore nel caricamento della pianta');
+      this.router.navigate(['/plants']);
+    } finally {
+      this.loading.set(false);
+    }
   }
 
   onSeasonalCareChange(care: PlantSeasonalCare) {
@@ -583,10 +590,11 @@ export class PlantEditorComponent implements OnInit {
     this.attachments.update((list) => list.filter((a) => a.id !== attId));
   }
 
-  savePlant() {
+  async savePlant() {
     if (!this.plantData.commonName.trim()) return;
 
     this.saving.set(true);
+    const now = new Date().toISOString();
     const payload: Partial<PlantItem> = {
       commonName: this.plantData.commonName.trim(),
       scientificName: this.plantData.scientificName.trim() || null,
@@ -601,30 +609,47 @@ export class PlantEditorComponent implements OnInit {
       attachments: this.attachments(),
     };
 
-    if (this.isEditing() && this.plantId) {
-      this.api.updatePlant(this.plantId, payload).subscribe({
-        next: (updated) => {
-          this.toast.success('Scheda botanica aggiornata');
-          this.saving.set(false);
-          this.router.navigate(['/plants', updated.id]);
-        },
-        error: () => {
-          this.toast.error('Errore durante l’aggiornamento');
-          this.saving.set(false);
-        },
-      });
-    } else {
-      this.api.createPlant(payload).subscribe({
-        next: (created) => {
-          this.toast.success('Nuova pianta aggiunta al catalogo');
-          this.saving.set(false);
-          this.router.navigate(['/plants', created.id]);
-        },
-        error: () => {
-          this.toast.error('Errore durante la creazione della scheda');
-          this.saving.set(false);
-        },
-      });
+    try {
+      if (this.isEditing() && this.plantId) {
+        const existing = await this.storage.getPlant(this.plantId);
+        const updatedPlant: PlantItem = {
+          ...(existing || {}),
+          id: this.plantId,
+          commonName: payload.commonName!,
+          scientificName: payload.scientificName ?? null,
+          seasonalCare: payload.seasonalCare,
+          soilRepotting: payload.soilRepotting,
+          fertilization: payload.fertilization,
+          attachments: payload.attachments,
+          createdAt: existing?.createdAt || now,
+          updatedAt: now,
+        };
+        await this.storage.savePlants([updatedPlant]);
+        await this.syncService.queuePlantChange(this.plantId, 'update', payload as Record<string, unknown>);
+        this.toast.success('Scheda botanica aggiornata');
+        this.router.navigate(['/plants', this.plantId]);
+      } else {
+        const id = crypto.randomUUID();
+        const newPlant: PlantItem = {
+          id,
+          commonName: payload.commonName!,
+          scientificName: payload.scientificName ?? null,
+          seasonalCare: payload.seasonalCare,
+          soilRepotting: payload.soilRepotting,
+          fertilization: payload.fertilization,
+          attachments: payload.attachments,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await this.storage.savePlants([newPlant]);
+        await this.syncService.queuePlantChange(id, 'create', newPlant as unknown as Record<string, unknown>);
+        this.toast.success('Nuova pianta aggiunta al catalogo');
+        this.router.navigate(['/plants', id]);
+      }
+    } catch {
+      this.toast.error('Errore durante il salvataggio della scheda');
+    } finally {
+      this.saving.set(false);
     }
   }
 

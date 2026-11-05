@@ -11,6 +11,17 @@ import { SyncTombstone } from '../entities/sync-tombstone.entity';
 import { SyncPayloadDto, SyncResponseDto, SyncConflict } from '../common/sync/sync.types';
 import { computeNextWateringDate, getWateringFrequencyDays } from './room-plants.service';
 
+function extractValue<T = any>(item: any, key: string, fallback?: T): T | undefined {
+  if (!item) return fallback;
+  if (item[key] !== undefined) return item[key];
+  if (item.data && item.data[key] !== undefined) return item.data[key];
+  if (item.fields && item.fields[key] !== undefined) {
+    const f = item.fields[key];
+    return f && typeof f === 'object' && 'value' in f ? f.value : f;
+  }
+  return fallback;
+}
+
 @Injectable()
 export class SyncService {
   constructor(
@@ -56,23 +67,30 @@ export class SyncService {
         } else {
           let space = await this.spacesRepo.findOne({ where: { id: item.id, userId } });
           const clientUpdated = new Date(item.updatedAt);
+          const name = extractValue(item, 'name', 'Nuovo Spazio')!;
+          const location = extractValue(item, 'location', null);
+          const description = extractValue(item, 'description', null);
+          const coverPhotoUrl = extractValue(item, 'coverPhotoUrl', null);
 
           if (!space) {
             space = this.spacesRepo.create({
               id: item.id,
               userId,
-              name: item.name || 'Nuovo Spazio',
-              location: item.location || null,
-              description: item.description || null,
-              coverPhotoUrl: item.coverPhotoUrl || null,
+              name,
+              location,
+              description,
+              coverPhotoUrl,
             });
+            space.createdAt = clientUpdated;
+            space.updatedAt = clientUpdated;
             await this.spacesRepo.save(space);
             applied.spaces.push(space.id);
           } else if (clientUpdated >= space.updatedAt) {
-            space.name = item.name ?? space.name;
-            space.location = item.location !== undefined ? item.location : space.location;
-            space.description = item.description !== undefined ? item.description : space.description;
-            space.coverPhotoUrl = item.coverPhotoUrl !== undefined ? item.coverPhotoUrl : space.coverPhotoUrl;
+            if (name !== undefined) space.name = name;
+            if (location !== undefined) space.location = location;
+            if (description !== undefined) space.description = description;
+            if (coverPhotoUrl !== undefined) space.coverPhotoUrl = coverPhotoUrl;
+            space.updatedAt = clientUpdated;
             await this.spacesRepo.save(space);
             applied.spaces.push(space.id);
           }
@@ -89,23 +107,30 @@ export class SyncService {
         } else {
           let room = await this.roomsRepo.findOne({ where: { id: item.id, userId } });
           const clientUpdated = new Date(item.updatedAt);
+          const spaceId = extractValue(item, 'spaceId');
+          const name = extractValue(item, 'name', 'Nuova Stanza')!;
+          const description = extractValue(item, 'description', null);
+          const coverPhotoUrl = extractValue(item, 'coverPhotoUrl', null);
 
           if (!room) {
             room = this.roomsRepo.create({
               id: item.id,
               userId,
-              spaceId: item.spaceId!,
-              name: item.name || 'Nuova Stanza',
-              description: item.description || null,
-              coverPhotoUrl: item.coverPhotoUrl || null,
+              spaceId: spaceId!,
+              name,
+              description,
+              coverPhotoUrl,
             });
+            room.createdAt = clientUpdated;
+            room.updatedAt = clientUpdated;
             await this.roomsRepo.save(room);
             applied.rooms.push(room.id);
           } else if (clientUpdated >= room.updatedAt) {
-            room.name = item.name ?? room.name;
-            room.description = item.description !== undefined ? item.description : room.description;
-            room.coverPhotoUrl = item.coverPhotoUrl !== undefined ? item.coverPhotoUrl : room.coverPhotoUrl;
-            if (item.spaceId) room.spaceId = item.spaceId;
+            if (name !== undefined) room.name = name;
+            if (description !== undefined) room.description = description;
+            if (coverPhotoUrl !== undefined) room.coverPhotoUrl = coverPhotoUrl;
+            if (spaceId !== undefined) room.spaceId = spaceId;
+            room.updatedAt = clientUpdated;
             await this.roomsRepo.save(room);
             applied.rooms.push(room.id);
           }
@@ -122,25 +147,33 @@ export class SyncService {
         } else {
           let plant = await this.plantsRepo.findOne({ where: { id: item.id, userId } });
           const clientUpdated = new Date(item.updatedAt);
+          const commonName = extractValue(item, 'commonName', 'Nuova Pianta')!;
+          const scientificName = extractValue(item, 'scientificName', null);
+          const seasonalCare = extractValue(item, 'seasonalCare', null);
+          const soilRepotting = extractValue(item, 'soilRepotting', null);
+          const fertilization = extractValue(item, 'fertilization', null);
 
           if (!plant) {
             plant = this.plantsRepo.create({
               id: item.id,
               userId,
-              commonName: item.commonName || 'Nuova Pianta',
-              scientificName: item.scientificName || null,
-              seasonalCare: item.seasonalCare || null,
-              soilRepotting: item.soilRepotting || null,
-              fertilization: item.fertilization || null,
+              commonName,
+              scientificName,
+              seasonalCare,
+              soilRepotting,
+              fertilization,
             });
+            plant.createdAt = clientUpdated;
+            plant.updatedAt = clientUpdated;
             await this.plantsRepo.save(plant);
             applied.plants.push(plant.id);
           } else if (clientUpdated >= plant.updatedAt) {
-            plant.commonName = item.commonName ?? plant.commonName;
-            plant.scientificName = item.scientificName !== undefined ? item.scientificName : plant.scientificName;
-            plant.seasonalCare = item.seasonalCare !== undefined ? item.seasonalCare : plant.seasonalCare;
-            plant.soilRepotting = item.soilRepotting !== undefined ? item.soilRepotting : plant.soilRepotting;
-            plant.fertilization = item.fertilization !== undefined ? item.fertilization : plant.fertilization;
+            if (commonName !== undefined) plant.commonName = commonName;
+            if (scientificName !== undefined) plant.scientificName = scientificName;
+            if (seasonalCare !== undefined) plant.seasonalCare = seasonalCare;
+            if (soilRepotting !== undefined) plant.soilRepotting = soilRepotting;
+            if (fertilization !== undefined) plant.fertilization = fertilization;
+            plant.updatedAt = clientUpdated;
             await this.plantsRepo.save(plant);
             applied.plants.push(plant.id);
           }
@@ -160,13 +193,21 @@ export class SyncService {
             relations: { plant: true },
           });
           const clientUpdated = new Date(item.updatedAt);
+          const roomId = extractValue(item, 'roomId');
+          const plantId = extractValue(item, 'plantId');
+          const position = extractValue(item, 'position', null);
+          const customFrequencyDays = extractValue(item, 'customFrequencyDays', null);
+          const lastWateredAt = extractValue(item, 'lastWateredAt', null);
+          const nextWateringDueAt = extractValue(item, 'nextWateringDueAt', null);
+          const snoozedUntil = extractValue(item, 'snoozedUntil', null);
+          const notes = extractValue(item, 'notes', null);
 
           if (!rp) {
-            const plant = await this.plantsRepo.findOne({ where: { id: item.plantId, userId } });
-            const freq = getWateringFrequencyDays(plant, item.customFrequencyDays);
-            const lastWatered = item.lastWateredAt ? new Date(item.lastWateredAt) : null;
-            const nextDue = item.nextWateringDueAt
-              ? new Date(item.nextWateringDueAt)
+            const plant = await this.plantsRepo.findOne({ where: { id: plantId!, userId } });
+            const freq = getWateringFrequencyDays(plant, customFrequencyDays);
+            const lastWatered = lastWateredAt ? new Date(lastWateredAt) : null;
+            const nextDue = nextWateringDueAt
+              ? new Date(nextWateringDueAt)
               : lastWatered
               ? computeNextWateringDate(lastWatered, freq)
               : new Date();
@@ -174,24 +215,27 @@ export class SyncService {
             rp = this.roomPlantsRepo.create({
               id: item.id,
               userId,
-              roomId: item.roomId!,
-              plantId: item.plantId!,
-              position: item.position || null,
-              customFrequencyDays: item.customFrequencyDays || null,
+              roomId: roomId!,
+              plantId: plantId!,
+              position: position || null,
+              customFrequencyDays: customFrequencyDays || null,
               lastWateredAt: lastWatered,
               nextWateringDueAt: nextDue,
-              snoozedUntil: item.snoozedUntil ? new Date(item.snoozedUntil) : null,
-              notes: item.notes || null,
+              snoozedUntil: snoozedUntil ? new Date(snoozedUntil) : null,
+              notes: notes || null,
             });
+            rp.createdAt = clientUpdated;
+            rp.updatedAt = clientUpdated;
             await this.roomPlantsRepo.save(rp);
             applied.roomPlants.push(rp.id);
           } else if (clientUpdated >= rp.updatedAt) {
-            rp.position = item.position !== undefined ? item.position : rp.position;
-            rp.customFrequencyDays = item.customFrequencyDays !== undefined ? item.customFrequencyDays : rp.customFrequencyDays;
-            if (item.lastWateredAt) rp.lastWateredAt = new Date(item.lastWateredAt);
-            if (item.nextWateringDueAt) rp.nextWateringDueAt = new Date(item.nextWateringDueAt);
-            if (item.snoozedUntil !== undefined) rp.snoozedUntil = item.snoozedUntil ? new Date(item.snoozedUntil) : null;
-            rp.notes = item.notes !== undefined ? item.notes : rp.notes;
+            if (position !== undefined) rp.position = position;
+            if (customFrequencyDays !== undefined) rp.customFrequencyDays = customFrequencyDays;
+            if (lastWateredAt !== undefined) rp.lastWateredAt = lastWateredAt ? new Date(lastWateredAt) : null;
+            if (nextWateringDueAt !== undefined) rp.nextWateringDueAt = nextWateringDueAt ? new Date(nextWateringDueAt) : null;
+            if (snoozedUntil !== undefined) rp.snoozedUntil = snoozedUntil ? new Date(snoozedUntil) : null;
+            if (notes !== undefined) rp.notes = notes;
+            rp.updatedAt = clientUpdated;
             await this.roomPlantsRepo.save(rp);
             applied.roomPlants.push(rp.id);
           }
@@ -219,10 +263,15 @@ export class SyncService {
     if (changes.settings) {
       const s = await this.settingsRepo.findOne({ where: { userId } });
       if (s) {
-        if (changes.settings.preferredMapProvider) s.preferredMapProvider = changes.settings.preferredMapProvider;
-        if (changes.settings.themePreference) s.themePreference = changes.settings.themePreference;
-        if (changes.settings.emailNotificationsEnabled !== undefined) s.emailNotificationsEnabled = changes.settings.emailNotificationsEnabled;
-        if (changes.settings.notificationTime) s.notificationTime = changes.settings.notificationTime;
+        const preferredMapProvider = extractValue(changes.settings, 'preferredMapProvider');
+        const themePreference = extractValue(changes.settings, 'themePreference');
+        const emailNotificationsEnabled = extractValue(changes.settings, 'emailNotificationsEnabled');
+        const notificationTime = extractValue(changes.settings, 'notificationTime');
+
+        if (preferredMapProvider !== undefined) s.preferredMapProvider = preferredMapProvider;
+        if (themePreference !== undefined) s.themePreference = themePreference;
+        if (emailNotificationsEnabled !== undefined) s.emailNotificationsEnabled = emailNotificationsEnabled;
+        if (notificationTime !== undefined) s.notificationTime = notificationTime;
         await this.settingsRepo.save(s);
         applied.settings = true;
       }

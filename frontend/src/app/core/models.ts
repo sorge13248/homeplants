@@ -134,12 +134,22 @@ export interface RoomPlantItem {
 
 export type SyncStatus = 'online-ok' | 'syncing' | 'offline' | 'conflict';
 
+export interface FieldUpdate<T = unknown> {
+  value: T;
+  updatedAt?: string;
+}
+
 export interface SyncQueueItem {
   id: string;
   entityType: 'spaces' | 'rooms' | 'plants' | 'room_plants' | 'settings' | 'watering_logs';
   action: 'create' | 'update' | 'delete';
-  payload: any;
-  queuedAt: string;
+  entityId: string;
+  updatedAt: string;
+  fields?: Record<string, FieldUpdate>;
+  data?: Record<string, unknown>;
+  deleted?: boolean;
+  payload?: any;
+  queuedAt?: string;
 }
 
 export interface SyncConflict {
@@ -148,7 +158,47 @@ export interface SyncConflict {
   field: string;
   clientValue: unknown;
   serverValue: unknown;
+  clientTimestamp?: string;
+  serverTimestamp?: string;
   resolution: string;
   message: string;
+}
+
+export interface SyncPayloadDto {
+  lastSyncAt?: string | null;
+  clientTime?: string;
+  changes?: {
+    spaces?: any[];
+    rooms?: any[];
+    plants?: any[];
+    roomPlants?: any[];
+    settings?: any;
+    wateringLogs?: any[];
+  };
+}
+
+export interface SyncResponseDto {
+  serverTime: string;
+  status: 'ok' | 'conflict';
+  conflicts: SyncConflict[];
+  applied: {
+    spaces: string[];
+    rooms: string[];
+    plants: string[];
+    roomPlants: string[];
+    settings: boolean;
+    wateringLogs: number;
+  };
+  serverChanges: {
+    spaces: SpaceItem[];
+    deletedSpaceIds: string[];
+    rooms: RoomItem[];
+    deletedRoomIds: string[];
+    plants: PlantItem[];
+    deletedPlantIds: string[];
+    roomPlants: RoomPlantItem[];
+    deletedRoomPlantIds: string[];
+    settings?: UserSettings | null;
+  };
 }
 

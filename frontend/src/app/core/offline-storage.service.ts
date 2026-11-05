@@ -11,14 +11,13 @@ import {
 } from './models';
 
 const DB_NAME = 'homeplants_offline_v1';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORE_SPACES = 'spaces';
 const STORE_ROOMS = 'rooms';
 const STORE_PLANTS = 'plants';
 const STORE_ROOM_PLANTS = 'room_plants';
 const STORE_SETTINGS = 'settings';
-const STORE_ATTACHMENTS = 'offline_attachments';
 const STORE_QUEUE = 'sync_queue';
 const STORE_META = 'meta';
 
@@ -73,9 +72,6 @@ export class OfflineStorageService {
             if (!db.objectStoreNames.contains(STORE_SETTINGS)) {
               db.createObjectStore(STORE_SETTINGS, { keyPath: 'key' });
             }
-            if (!db.objectStoreNames.contains(STORE_ATTACHMENTS)) {
-              db.createObjectStore(STORE_ATTACHMENTS, { keyPath: 'id' });
-            }
             if (!db.objectStoreNames.contains(STORE_QUEUE)) {
               db.createObjectStore(STORE_QUEUE, { keyPath: 'id' });
             }
@@ -93,7 +89,9 @@ export class OfflineStorageService {
     return this.dbPromise;
   }
 
-  // Spaces
+  // ==========================================
+  // SPACES
+  // ==========================================
   async getAllSpaces(): Promise<SpaceItem[]> {
     const db = await this.getDB();
     if (!db) return Array.from(this.memoryStore.spaces.values());
@@ -106,6 +104,22 @@ export class OfflineStorageService {
         req.onerror = () => resolve(Array.from(this.memoryStore.spaces.values()));
       } catch {
         resolve(Array.from(this.memoryStore.spaces.values()));
+      }
+    });
+  }
+
+  async getSpace(id: string): Promise<SpaceItem | null> {
+    const db = await this.getDB();
+    if (!db) return this.memoryStore.spaces.get(id) ?? null;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_SPACES, 'readonly');
+        const req = tx.objectStore(STORE_SPACES).get(id);
+        req.onsuccess = () => resolve(req.result ?? null);
+        req.onerror = () => resolve(this.memoryStore.spaces.get(id) ?? null);
+      } catch {
+        resolve(this.memoryStore.spaces.get(id) ?? null);
       }
     });
   }
@@ -154,7 +168,26 @@ export class OfflineStorageService {
     });
   }
 
-  // Rooms
+  async clearSpaces(): Promise<void> {
+    this.memoryStore.spaces.clear();
+    const db = await this.getDB();
+    if (!db) return;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_SPACES, 'readwrite');
+        tx.objectStore(STORE_SPACES).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  // ==========================================
+  // ROOMS
+  // ==========================================
   async getAllRooms(): Promise<RoomItem[]> {
     const db = await this.getDB();
     if (!db) return Array.from(this.memoryStore.rooms.values());
@@ -167,6 +200,51 @@ export class OfflineStorageService {
         req.onerror = () => resolve(Array.from(this.memoryStore.rooms.values()));
       } catch {
         resolve(Array.from(this.memoryStore.rooms.values()));
+      }
+    });
+  }
+
+  async getRoom(id: string): Promise<RoomItem | null> {
+    const db = await this.getDB();
+    if (!db) return this.memoryStore.rooms.get(id) ?? null;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_ROOMS, 'readonly');
+        const req = tx.objectStore(STORE_ROOMS).get(id);
+        req.onsuccess = () => resolve(req.result ?? null);
+        req.onerror = () => resolve(this.memoryStore.rooms.get(id) ?? null);
+      } catch {
+        resolve(this.memoryStore.rooms.get(id) ?? null);
+      }
+    });
+  }
+
+  async getRoomsBySpace(spaceId: string): Promise<RoomItem[]> {
+    const db = await this.getDB();
+    if (!db) {
+      return Array.from(this.memoryStore.rooms.values()).filter((r) => r.spaceId === spaceId);
+    }
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_ROOMS, 'readonly');
+        const store = tx.objectStore(STORE_ROOMS);
+        if (store.indexNames.contains('spaceId')) {
+          const index = store.index('spaceId');
+          const req = index.getAll(spaceId);
+          req.onsuccess = () => resolve(req.result ?? []);
+          req.onerror = () =>
+            resolve(Array.from(this.memoryStore.rooms.values()).filter((r) => r.spaceId === spaceId));
+        } else {
+          const req = store.getAll();
+          req.onsuccess = () =>
+            resolve((req.result ?? []).filter((r: RoomItem) => r.spaceId === spaceId));
+          req.onerror = () =>
+            resolve(Array.from(this.memoryStore.rooms.values()).filter((r) => r.spaceId === spaceId));
+        }
+      } catch {
+        resolve(Array.from(this.memoryStore.rooms.values()).filter((r) => r.spaceId === spaceId));
       }
     });
   }
@@ -215,7 +293,26 @@ export class OfflineStorageService {
     });
   }
 
-  // Plants
+  async clearRooms(): Promise<void> {
+    this.memoryStore.rooms.clear();
+    const db = await this.getDB();
+    if (!db) return;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_ROOMS, 'readwrite');
+        tx.objectStore(STORE_ROOMS).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  // ==========================================
+  // PLANTS
+  // ==========================================
   async getAllPlants(): Promise<PlantItem[]> {
     const db = await this.getDB();
     if (!db) return Array.from(this.memoryStore.plants.values());
@@ -228,6 +325,22 @@ export class OfflineStorageService {
         req.onerror = () => resolve(Array.from(this.memoryStore.plants.values()));
       } catch {
         resolve(Array.from(this.memoryStore.plants.values()));
+      }
+    });
+  }
+
+  async getPlant(id: string): Promise<PlantItem | null> {
+    const db = await this.getDB();
+    if (!db) return this.memoryStore.plants.get(id) ?? null;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_PLANTS, 'readonly');
+        const req = tx.objectStore(STORE_PLANTS).get(id);
+        req.onsuccess = () => resolve(req.result ?? null);
+        req.onerror = () => resolve(this.memoryStore.plants.get(id) ?? null);
+      } catch {
+        resolve(this.memoryStore.plants.get(id) ?? null);
       }
     });
   }
@@ -276,7 +389,26 @@ export class OfflineStorageService {
     });
   }
 
-  // Room Plants
+  async clearPlants(): Promise<void> {
+    this.memoryStore.plants.clear();
+    const db = await this.getDB();
+    if (!db) return;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_PLANTS, 'readwrite');
+        tx.objectStore(STORE_PLANTS).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  // ==========================================
+  // ROOM PLANTS
+  // ==========================================
   async getAllRoomPlants(): Promise<RoomPlantItem[]> {
     const db = await this.getDB();
     if (!db) return Array.from(this.memoryStore.roomPlants.values());
@@ -289,6 +421,80 @@ export class OfflineStorageService {
         req.onerror = () => resolve(Array.from(this.memoryStore.roomPlants.values()));
       } catch {
         resolve(Array.from(this.memoryStore.roomPlants.values()));
+      }
+    });
+  }
+
+  async getRoomPlant(id: string): Promise<RoomPlantItem | null> {
+    const db = await this.getDB();
+    if (!db) return this.memoryStore.roomPlants.get(id) ?? null;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_ROOM_PLANTS, 'readonly');
+        const req = tx.objectStore(STORE_ROOM_PLANTS).get(id);
+        req.onsuccess = () => resolve(req.result ?? null);
+        req.onerror = () => resolve(this.memoryStore.roomPlants.get(id) ?? null);
+      } catch {
+        resolve(this.memoryStore.roomPlants.get(id) ?? null);
+      }
+    });
+  }
+
+  async getRoomPlantsByRoom(roomId: string): Promise<RoomPlantItem[]> {
+    const db = await this.getDB();
+    if (!db) {
+      return Array.from(this.memoryStore.roomPlants.values()).filter((rp) => rp.roomId === roomId);
+    }
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_ROOM_PLANTS, 'readonly');
+        const store = tx.objectStore(STORE_ROOM_PLANTS);
+        if (store.indexNames.contains('roomId')) {
+          const index = store.index('roomId');
+          const req = index.getAll(roomId);
+          req.onsuccess = () => resolve(req.result ?? []);
+          req.onerror = () =>
+            resolve(Array.from(this.memoryStore.roomPlants.values()).filter((rp) => rp.roomId === roomId));
+        } else {
+          const req = store.getAll();
+          req.onsuccess = () =>
+            resolve((req.result ?? []).filter((rp: RoomPlantItem) => rp.roomId === roomId));
+          req.onerror = () =>
+            resolve(Array.from(this.memoryStore.roomPlants.values()).filter((rp) => rp.roomId === roomId));
+        }
+      } catch {
+        resolve(Array.from(this.memoryStore.roomPlants.values()).filter((rp) => rp.roomId === roomId));
+      }
+    });
+  }
+
+  async getRoomPlantsByPlant(plantId: string): Promise<RoomPlantItem[]> {
+    const db = await this.getDB();
+    if (!db) {
+      return Array.from(this.memoryStore.roomPlants.values()).filter((rp) => rp.plantId === plantId);
+    }
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_ROOM_PLANTS, 'readonly');
+        const store = tx.objectStore(STORE_ROOM_PLANTS);
+        if (store.indexNames.contains('plantId')) {
+          const index = store.index('plantId');
+          const req = index.getAll(plantId);
+          req.onsuccess = () => resolve(req.result ?? []);
+          req.onerror = () =>
+            resolve(Array.from(this.memoryStore.roomPlants.values()).filter((rp) => rp.plantId === plantId));
+        } else {
+          const req = store.getAll();
+          req.onsuccess = () =>
+            resolve((req.result ?? []).filter((rp: RoomPlantItem) => rp.plantId === plantId));
+          req.onerror = () =>
+            resolve(Array.from(this.memoryStore.roomPlants.values()).filter((rp) => rp.plantId === plantId));
+        }
+      } catch {
+        resolve(Array.from(this.memoryStore.roomPlants.values()).filter((rp) => rp.plantId === plantId));
       }
     });
   }
@@ -337,7 +543,26 @@ export class OfflineStorageService {
     });
   }
 
-  // Settings
+  async clearRoomPlants(): Promise<void> {
+    this.memoryStore.roomPlants.clear();
+    const db = await this.getDB();
+    if (!db) return;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_ROOM_PLANTS, 'readwrite');
+        tx.objectStore(STORE_ROOM_PLANTS).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  // ==========================================
+  // SETTINGS
+  // ==========================================
   async getSettings(): Promise<UserSettings | null> {
     const db = await this.getDB();
     if (!db) return this.memoryStore.settings;
@@ -371,7 +596,9 @@ export class OfflineStorageService {
     });
   }
 
-  // Sync Queue
+  // ==========================================
+  // SYNC QUEUE
+  // ==========================================
   async getQueue(): Promise<SyncQueueItem[]> {
     const db = await this.getDB();
     if (!db) return [...this.memoryStore.queue];
@@ -405,6 +632,27 @@ export class OfflineStorageService {
     });
   }
 
+  async enqueueBatch(items: SyncQueueItem[]): Promise<void> {
+    if (!items.length) return;
+    this.memoryStore.queue.push(...items);
+    const db = await this.getDB();
+    if (!db) return;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_QUEUE, 'readwrite');
+        const store = tx.objectStore(STORE_QUEUE);
+        for (const item of items) {
+          store.put(item);
+        }
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  }
+
   async removeQueueItems(ids: string[]): Promise<void> {
     const idSet = new Set(ids);
     this.memoryStore.queue = this.memoryStore.queue.filter((i) => !idSet.has(i.id));
@@ -426,7 +674,26 @@ export class OfflineStorageService {
     });
   }
 
-  // Metadata
+  async clearQueue(): Promise<void> {
+    this.memoryStore.queue = [];
+    const db = await this.getDB();
+    if (!db) return;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_QUEUE, 'readwrite');
+        tx.objectStore(STORE_QUEUE).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  // ==========================================
+  // METADATA
+  // ==========================================
   async getMetadata(): Promise<StorageMetadata> {
     const db = await this.getDB();
     if (!db) return { ...this.memoryStore.meta };
@@ -474,6 +741,9 @@ export class OfflineStorageService {
     });
   }
 
+  // ==========================================
+  // RESET ALL
+  // ==========================================
   async clearAll(): Promise<void> {
     this.memoryStore.spaces.clear();
     this.memoryStore.rooms.clear();
@@ -481,6 +751,11 @@ export class OfflineStorageService {
     this.memoryStore.roomPlants.clear();
     this.memoryStore.queue = [];
     this.memoryStore.settings = null;
+    this.memoryStore.meta = {
+      lastSyncAt: null,
+      lastSyncStatus: 'online-ok',
+      conflicts: [],
+    };
 
     const db = await this.getDB();
     if (!db) return;
@@ -488,7 +763,7 @@ export class OfflineStorageService {
     return new Promise((resolve) => {
       try {
         const tx = db.transaction(
-          [STORE_SPACES, STORE_ROOMS, STORE_PLANTS, STORE_ROOM_PLANTS, STORE_SETTINGS, STORE_QUEUE],
+          [STORE_SPACES, STORE_ROOMS, STORE_PLANTS, STORE_ROOM_PLANTS, STORE_SETTINGS, STORE_QUEUE, STORE_META],
           'readwrite',
         );
         tx.objectStore(STORE_SPACES).clear();
@@ -497,6 +772,7 @@ export class OfflineStorageService {
         tx.objectStore(STORE_ROOM_PLANTS).clear();
         tx.objectStore(STORE_SETTINGS).clear();
         tx.objectStore(STORE_QUEUE).clear();
+        tx.objectStore(STORE_META).clear();
         tx.oncomplete = () => resolve();
         tx.onerror = () => resolve();
       } catch {
@@ -505,4 +781,3 @@ export class OfflineStorageService {
     });
   }
 }
-

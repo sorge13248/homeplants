@@ -1,9 +1,12 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Dialog } from '@angular/cdk/dialog';
+import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../../../core/api.service';
+import { OfflineStorageService } from '../../../../core/offline-storage.service';
+import { SyncService } from '../../../../core/sync.service';
 import { MapProviderService } from '../../../../core/map-provider.service';
 import { ToastService } from '../../../../core/toast.service';
 import { SpaceItem, UserSettings } from '../../../../core/models';
@@ -359,6 +362,8 @@ import { ConfirmModalComponent } from '../../../../shared/components/confirm-mod
 })
 export class SpacesListComponent implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly storage = inject(OfflineStorageService);
+  private readonly syncService = inject(SyncService);
   private readonly mapProvider = inject(MapProviderService);
   private readonly toast = inject(ToastService);
   private readonly router = inject(Router);
@@ -375,6 +380,7 @@ export class SpacesListComponent implements OnInit {
 
   searchQuery = '';
   userSettings: UserSettings | null = null;
+  private initialLoaded = false;
 
   formData: {
     name: string;
@@ -388,26 +394,38 @@ export class SpacesListComponent implements OnInit {
     coverPhotoUrl: null,
   };
 
-  ngOnInit() {
-    this.loadData();
+  constructor() {
+    effect(() => {
+      this.syncService.dataUpdated();
+      void this.loadData();
+    });
   }
 
-  loadData() {
-    this.loading.set(true);
-    this.api.getSettings().subscribe({
-      next: (s) => (this.userSettings = s),
-    });
+  ngOnInit() {
+    void this.loadData();
+  }
 
-    this.api.getSpaces().subscribe({
-      next: (spaces) => {
-        this.spaces.set(spaces);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.toast.error('Errore nel caricamento degli spazi');
-        this.loading.set(false);
-      },
-    });
+  async loadData() {
+    try {
+      this.userSettings = (await this.storage.getSettings()) || null;
+      const spaces = await this.storage.getAllSpaces();
+      const rooms = await this.storage.getAllRooms();
+
+      for (const s of spaces) {
+        s.rooms = rooms.filter((r) => r.spaceId === s.id);
+      }
+
+      this.spaces.set(spaces);
+
+      if (spaces.length === 0 && !this.initialLoaded && !this.syncService.checkIsOffline()) {
+        this.initialLoaded = true;
+        await this.syncService.sync(true);
+      }
+    } catch {
+      // Local storage read error
+    } finally {
+      this.loading.set(false);
+    }
   }
 
   filteredSpaces(): SpaceItem[] {
@@ -482,10 +500,12 @@ export class SpacesListComponent implements OnInit {
     });
   }
 
-  saveSpace() {
+  async saveSpace() {
     if (!this.formData.name.trim()) return;
 
     this.saving.set(true);
+    const now = new Date().toISOString();
+
     const payload: Partial<SpaceItem> = {
       name: this.formData.name.trim(),
       location: this.formData.location.trim() || null,
@@ -494,37 +514,44 @@ export class SpacesListComponent implements OnInit {
     };
 
     if (this.isEditing() && this.currentEditingId) {
-      this.api.updateSpace(this.currentEditingId, payload).subscribe({
-        next: (updated) => {
-          this.spaces.update((list) =>
-            list.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)),
-          );
-          this.toast.success('Spazio aggiornato');
-          this.saving.set(false);
-          this.closeModal();
-        },
-        error: () => {
-          this.toast.error('Errore durante l’aggiornamento dello spazio');
-          this.saving.set(false);
-        },
-      });
+      const existing = await this.storage.getSpace(this.currentEditingId);
+      const updated: SpaceItem = {
+        ...(existing ?? ({} as SpaceItem)),
+        id: this.currentEditingId,
+        name: payload.name!,
+        location: payload.location ?? null,
+        description: payload.description ?? null,
+        coverPhotoUrl: payload.coverPhotoUrl ?? null,
+        updatedAt: now,
+      };
+      await this.storage.saveSpaces([updated]);
+      await this.syncService.queueSpaceChange(this.currentEditingId, 'update', payload);
+
+      this.toast.success('Spazio aggiornato');
+      this.saving.set(false);
+      this.closeModal();
     } else {
-      this.api.createSpace(payload).subscribe({
-        next: (created) => {
-          this.spaces.update((list) => [created, ...list]);
-          this.toast.success('Nuovo spazio creato con successo');
-          this.saving.set(false);
-          this.closeModal();
-        },
-        error: () => {
-          this.toast.error('Errore durante la creazione dello spazio');
-          this.saving.set(false);
-        },
-      });
+      const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `space_${Date.now()}`;
+      const newSpace: SpaceItem = {
+        id,
+        name: payload.name!,
+        location: payload.location ?? null,
+        description: payload.description ?? null,
+        coverPhotoUrl: payload.coverPhotoUrl ?? null,
+        rooms: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      await this.storage.saveSpaces([newSpace]);
+      await this.syncService.queueSpaceChange(id, 'create', newSpace);
+
+      this.toast.success('Nuovo spazio creato con successo');
+      this.saving.set(false);
+      this.closeModal();
     }
   }
 
-  confirmDeleteSpace(space: SpaceItem) {
+  async confirmDeleteSpace(space: SpaceItem) {
     const dialogRef = this.dialog.open<boolean>(ConfirmModalComponent, {
       data: {
         title: `Elimina "${space.name}"?`,
@@ -535,19 +562,22 @@ export class SpacesListComponent implements OnInit {
       },
     });
 
-    dialogRef.closed.subscribe((confirmed) => {
-      if (confirmed) {
-        this.api.deleteSpace(space.id).subscribe({
-          next: () => {
-            this.spaces.update((list) => list.filter((s) => s.id !== space.id));
-            this.toast.success('Spazio eliminato');
-          },
-          error: () => {
-            this.toast.error('Errore durante l’eliminazione dello spazio');
-          },
-        });
+    const confirmed = await firstValueFrom(dialogRef.closed);
+    if (confirmed) {
+      await this.storage.removeSpaces([space.id]);
+      const rooms = await this.storage.getRoomsBySpace(space.id);
+      if (rooms.length) {
+        await this.storage.removeRooms(rooms.map((r) => r.id));
+        for (const r of rooms) {
+          const rps = await this.storage.getRoomPlantsByRoom(r.id);
+          if (rps.length) {
+            await this.storage.removeRoomPlants(rps.map((p) => p.id));
+          }
+        }
       }
-    });
+      await this.syncService.queueSpaceChange(space.id, 'delete');
+      this.toast.success('Spazio eliminato');
+    }
   }
 }
 

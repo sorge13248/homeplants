@@ -1,9 +1,11 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Dialog } from '@angular/cdk/dialog';
-import { ApiService } from '../../../../core/api.service';
+import { firstValueFrom } from 'rxjs';
+import { OfflineStorageService } from '../../../../core/offline-storage.service';
+import { SyncService } from '../../../../core/sync.service';
 import { ToastService } from '../../../../core/toast.service';
 import { PlantItem } from '../../../../core/models';
 import { AppCardComponent } from '../../../../shared/components/app-card/app-card.component';
@@ -190,7 +192,8 @@ import { AddToRoomModalComponent } from '../../../../shared/components/add-to-ro
   `],
 })
 export class PlantCatalogComponent implements OnInit {
-  private readonly api = inject(ApiService);
+  private readonly storage = inject(OfflineStorageService);
+  private readonly syncService = inject(SyncService);
   private readonly toast = inject(ToastService);
   private readonly router = inject(Router);
   private readonly dialog = inject(Dialog);
@@ -198,23 +201,39 @@ export class PlantCatalogComponent implements OnInit {
   readonly plants = signal<PlantItem[]>([]);
   readonly loading = signal(true);
   searchQuery = '';
+  private initialLoaded = false;
 
-  ngOnInit() {
-    this.loadPlants();
+  constructor() {
+    effect(() => {
+      this.syncService.dataUpdated();
+      void this.loadPlants();
+    });
   }
 
-  loadPlants() {
-    this.loading.set(true);
-    this.api.getPlants().subscribe({
-      next: (list) => {
-        this.plants.set(list);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.toast.error('Errore nel caricamento del catalogo piante');
-        this.loading.set(false);
-      },
-    });
+  ngOnInit() {
+    void this.loadPlants();
+  }
+
+  async loadPlants() {
+    try {
+      const list = await this.storage.getAllPlants();
+      const allRoomPlants = await this.storage.getAllRoomPlants();
+
+      for (const p of list) {
+        p.roomPlants = allRoomPlants.filter((rp) => rp.plantId === p.id);
+      }
+
+      this.plants.set(list);
+
+      if (list.length === 0 && !this.initialLoaded && !this.syncService.checkIsOffline()) {
+        this.initialLoaded = true;
+        await this.syncService.sync(true);
+      }
+    } catch {
+      // Local storage read error
+    } finally {
+      this.loading.set(false);
+    }
   }
 
   filteredPlants(): PlantItem[] {
@@ -262,12 +281,12 @@ export class PlantCatalogComponent implements OnInit {
 
     dialogRef.closed.subscribe((result) => {
       if (result) {
-        this.loadPlants();
+        void this.loadPlants();
       }
     });
   }
 
-  confirmDeletePlant(plant: PlantItem) {
+  async confirmDeletePlant(plant: PlantItem) {
     const dialogRef = this.dialog.open<boolean>(ConfirmModalComponent, {
       data: {
         title: `Eliminare "${plant.commonName}" dal catalogo?`,
@@ -278,19 +297,16 @@ export class PlantCatalogComponent implements OnInit {
       },
     });
 
-    dialogRef.closed.subscribe((confirmed) => {
-      if (confirmed) {
-        this.api.deletePlant(plant.id).subscribe({
-          next: () => {
-            this.plants.update((list) => list.filter((p) => p.id !== plant.id));
-            this.toast.success('Pianta eliminata dal catalogo');
-          },
-          error: () => {
-            this.toast.error('Errore durante l’eliminazione della pianta');
-          },
-        });
+    const confirmed = await firstValueFrom(dialogRef.closed);
+    if (confirmed) {
+      await this.storage.removePlants([plant.id]);
+      const rps = await this.storage.getRoomPlantsByPlant(plant.id);
+      if (rps.length) {
+        await this.storage.removeRoomPlants(rps.map((p) => p.id));
       }
-    });
+      await this.syncService.queuePlantChange(plant.id, 'delete');
+      this.toast.success('Pianta eliminata dal catalogo');
+    }
   }
 }
 

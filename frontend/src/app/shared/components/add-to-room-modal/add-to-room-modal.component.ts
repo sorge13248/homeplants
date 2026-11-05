@@ -2,9 +2,11 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
-import { ApiService } from '../../../core/api.service';
 import { OfflineStorageService } from '../../../core/offline-storage.service';
-import { PlantItem, RoomItem, SpaceItem } from '../../../core/models';
+import { SyncService } from '../../../core/sync.service';
+import { ToastService } from '../../../core/toast.service';
+import { PlantItem, RoomItem, RoomPlantItem, SpaceItem, WateringLogItem } from '../../../core/models';
+import { computeNextWateringDate, getWateringFrequencyDays } from '../../../core/watering.utils';
 
 export interface AddToRoomModalData {
   plantId?: string;
@@ -189,7 +191,8 @@ export class AddToRoomModalComponent implements OnInit {
   readonly data: AddToRoomModalData = inject(DIALOG_DATA);
   private readonly dialogRef = inject(DialogRef);
   private readonly storage = inject(OfflineStorageService);
-  private readonly api = inject(ApiService);
+  private readonly syncService = inject(SyncService);
+  private readonly toast = inject(ToastService);
 
   readonly spaces = signal<SpaceItem[]>([]);
   readonly allRooms = signal<RoomItem[]>([]);
@@ -202,9 +205,9 @@ export class AddToRoomModalComponent implements OnInit {
   wateredToday = true;
   customFrequencyDays: number | null = null;
   notes = '';
+  submitting = false;
 
   async ngOnInit() {
-    // Load from local storage or api
     const spaces = await this.storage.getAllSpaces();
     this.spaces.set(spaces);
 
@@ -229,21 +232,61 @@ export class AddToRoomModalComponent implements OnInit {
   canSubmit(): boolean {
     const roomValid = Boolean(this.data.roomId || this.selectedRoomId);
     const plantValid = Boolean(this.data.plantId || this.selectedPlantId);
-    return roomValid && plantValid;
+    return roomValid && plantValid && !this.submitting;
   }
 
-  submit() {
-    const roomId = this.data.roomId || this.selectedRoomId;
-    const plantId = this.data.plantId || this.selectedPlantId;
+  async submit() {
+    if (!this.canSubmit()) return;
+    this.submitting = true;
 
-    this.dialogRef.close({
-      roomId,
-      plantId,
-      position: this.position.trim() || null,
-      lastWateredAt: this.wateredToday ? new Date().toISOString() : null,
-      customFrequencyDays: this.customFrequencyDays ? Number(this.customFrequencyDays) : null,
-      notes: this.notes.trim() || null,
-    });
+    try {
+      const roomId = this.data.roomId || this.selectedRoomId;
+      const plantId = this.data.plantId || this.selectedPlantId;
+      const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `rp_${Date.now()}`;
+      const now = new Date().toISOString();
+
+      const plant = await this.storage.getPlant(plantId);
+      const customFreq = this.customFrequencyDays ? Number(this.customFrequencyDays) : null;
+      const freq = getWateringFrequencyDays(plant, customFreq);
+      const lastWatered = this.wateredToday ? now : null;
+      const nextDue = this.wateredToday ? computeNextWateringDate(now, freq) : now;
+
+      const newRoomPlant: RoomPlantItem = {
+        id,
+        roomId,
+        plantId,
+        plant: plant ?? undefined,
+        position: this.position.trim() || null,
+        customFrequencyDays: customFreq,
+        lastWateredAt: lastWatered,
+        nextWateringDueAt: nextDue,
+        snoozedUntil: null,
+        notes: this.notes.trim() || null,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await this.storage.saveRoomPlants([newRoomPlant]);
+
+      if (this.wateredToday) {
+        const log: WateringLogItem = {
+          id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `log_${Date.now()}`,
+          roomPlantId: id,
+          wateredAt: now,
+          notes: null,
+          source: 'web',
+        };
+        await this.syncService.queueWateringLog(log);
+      }
+
+      await this.syncService.queueRoomPlantChange(id, 'create', newRoomPlant);
+      this.toast.success('Pianta collocata nella stanza con successo!');
+      this.dialogRef.close(newRoomPlant);
+    } catch {
+      this.toast.error('Errore durante il salvataggio');
+    } finally {
+      this.submitting = false;
+    }
   }
 
   cancel() {

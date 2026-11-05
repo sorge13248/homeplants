@@ -8,6 +8,8 @@ import {
   RoomItem,
   RoomPlantItem,
   SpaceItem,
+  SyncPayloadDto,
+  SyncResponseDto,
   UserSettings,
 } from './models';
 
@@ -164,11 +166,11 @@ export class ApiService {
   }
 
   // Sync
-  sync(payload: any): Observable<any> {
-    return this.http.post('/api/sync', payload);
+  sync(payload: SyncPayloadDto): Observable<SyncResponseDto> {
+    return this.http.post<SyncResponseDto>('/api/sync', payload);
   }
 
   getFullState(): Observable<any> {
-    return this.http.get('/api/sync/full-state');
+    return this.http.get<any>('/api/sync/full-state');
   }
 }

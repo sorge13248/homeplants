@@ -2,6 +2,8 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../../../core/api.service';
+import { OfflineStorageService } from '../../../../core/offline-storage.service';
+import { SyncService } from '../../../../core/sync.service';
 import { ToastService } from '../../../../core/toast.service';
 import { ThemeService, ThemePreference } from '../../../../core/theme.service';
 import { AuthService } from '../../../../core/auth.service';
@@ -483,6 +485,8 @@ import { UserSettings } from '../../../../core/models';
 })
 export class SettingsComponent implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly storage = inject(OfflineStorageService);
+  private readonly syncService = inject(SyncService);
   private readonly toast = inject(ToastService);
   private readonly theme = inject(ThemeService);
   readonly authService = inject(AuthService);
@@ -498,37 +502,40 @@ export class SettingsComponent implements OnInit {
     notificationTime: '08:00',
   };
 
-  ngOnInit() {
-    this.api.getSettings().subscribe({
-      next: (s) => {
+  async ngOnInit() {
+    await this.loadSettings();
+  }
+
+  async loadSettings() {
+    try {
+      const s = await this.storage.getSettings();
+      if (s) {
         this.settings = { ...s };
-        this.loading.set(false);
-      },
-      error: () => {
-        this.toast.error('Errore caricamento impostazioni');
-        this.loading.set(false);
-      },
-    });
+        this.theme.setPreference(s.themePreference);
+      }
+    } catch {
+      this.toast.error('Errore caricamento impostazioni');
+    } finally {
+      this.loading.set(false);
+    }
   }
 
   onThemeChange(newTheme: ThemePreference) {
     this.theme.setPreference(newTheme);
   }
 
-  saveSettings() {
+  async saveSettings() {
     this.saving.set(true);
-    this.api.updateSettings(this.settings).subscribe({
-      next: (updated) => {
-        this.settings = { ...updated };
-        this.theme.setPreference(updated.themePreference);
-        this.toast.success('Impostazioni salvate con successo');
-        this.saving.set(false);
-      },
-      error: () => {
-        this.toast.error('Errore durante il salvataggio delle impostazioni');
-        this.saving.set(false);
-      },
-    });
+    try {
+      await this.storage.saveSettings(this.settings);
+      await this.syncService.queueSettingsChange(this.settings);
+      this.theme.setPreference(this.settings.themePreference);
+      this.toast.success('Impostazioni salvate con successo');
+    } catch {
+      this.toast.error('Errore durante il salvataggio delle impostazioni');
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   triggerTestEmail() {
