@@ -90,482 +90,300 @@ export class OfflineStorageService {
   }
 
   // ==========================================
-  // SPACES
+  // COMMON HELPERS
   // ==========================================
-  async getAllSpaces(): Promise<SpaceItem[]> {
-    const sortSpaces = (list: SpaceItem[]) =>
-      [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  private sortByName<T extends { name?: string }>(list: T[]): T[] {
+    return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }
+
+  private sortByCommonName<T extends { commonName?: string }>(list: T[]): T[] {
+    return [...list].sort((a, b) => (a.commonName || '').localeCompare(b.commonName || ''));
+  }
+
+  private async executeGetAll<T extends { id: string }>(
+    storeName: string,
+    memoryMap: Map<string, T>,
+  ): Promise<T[]> {
     const db = await this.getDB();
-    if (!db) return sortSpaces(Array.from(this.memoryStore.spaces.values()));
+    if (!db) return Array.from(memoryMap.values());
 
     return new Promise((resolve) => {
       try {
-        const tx = db.transaction(STORE_SPACES, 'readonly');
-        const req = tx.objectStore(STORE_SPACES).getAll();
-        req.onsuccess = () => resolve(sortSpaces(req.result ?? []));
-        req.onerror = () => resolve(sortSpaces(Array.from(this.memoryStore.spaces.values())));
-      } catch {
-        resolve(sortSpaces(Array.from(this.memoryStore.spaces.values())));
+        const tx = db.transaction(storeName, 'readonly');
+        const req = tx.objectStore(storeName).getAll();
+        req.onsuccess = () => {
+          const list: T[] = req.result ?? [];
+          for (const item of list) {
+            memoryMap.set(item.id, item);
+          }
+          resolve(list);
+        };
+        req.onerror = () => {
+          console.warn(`[OfflineStorage] Error reading all from ${storeName}:`, req.error);
+          resolve(Array.from(memoryMap.values()));
+        };
+      } catch (err) {
+        console.warn(`[OfflineStorage] Failed executeGetAll on ${storeName}:`, err);
+        resolve(Array.from(memoryMap.values()));
       }
     });
   }
 
-  async getSpace(id: string): Promise<SpaceItem | null> {
+  private async executeGet<T>(
+    storeName: string,
+    id: string,
+    fallback: T | null,
+    onSuccessHydrate?: (item: T) => void,
+  ): Promise<T | null> {
     const db = await this.getDB();
-    if (!db) return this.memoryStore.spaces.get(id) ?? null;
+    if (!db) return fallback;
 
     return new Promise((resolve) => {
       try {
-        const tx = db.transaction(STORE_SPACES, 'readonly');
-        const req = tx.objectStore(STORE_SPACES).get(id);
-        req.onsuccess = () => resolve(req.result ?? null);
-        req.onerror = () => resolve(this.memoryStore.spaces.get(id) ?? null);
-      } catch {
-        resolve(this.memoryStore.spaces.get(id) ?? null);
+        const tx = db.transaction(storeName, 'readonly');
+        const req = tx.objectStore(storeName).get(id);
+        req.onsuccess = () => {
+          const result = (req.result as T) ?? null;
+          if (result && onSuccessHydrate) {
+            onSuccessHydrate(result);
+          }
+          resolve(result ?? fallback);
+        };
+        req.onerror = () => {
+          console.warn(`[OfflineStorage] Error reading key ${id} from ${storeName}:`, req.error);
+          resolve(fallback);
+        };
+      } catch (err) {
+        console.warn(`[OfflineStorage] Failed executeGet on ${storeName}:`, err);
+        resolve(fallback);
       }
     });
+  }
+
+  private async executePut<T>(storeName: string, items: T[]): Promise<void> {
+    if (!items.length) return;
+    const db = await this.getDB();
+    if (!db) return;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        for (const item of items) {
+          store.put(item);
+        }
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => {
+          console.warn(`[OfflineStorage] Error putting into ${storeName}:`, tx.error);
+          resolve();
+        };
+      } catch (err) {
+        console.warn(`[OfflineStorage] Failed executePut on ${storeName}:`, err);
+        resolve();
+      }
+    });
+  }
+
+  private async executeDelete(storeName: string, ids: string[]): Promise<void> {
+    if (!ids.length) return;
+    const db = await this.getDB();
+    if (!db) return;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        for (const id of ids) {
+          store.delete(id);
+        }
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => {
+          console.warn(`[OfflineStorage] Error deleting from ${storeName}:`, tx.error);
+          resolve();
+        };
+      } catch (err) {
+        console.warn(`[OfflineStorage] Failed executeDelete on ${storeName}:`, err);
+        resolve();
+      }
+    });
+  }
+
+  private async executeClear(storeName: string): Promise<void> {
+    const db = await this.getDB();
+    if (!db) return;
+
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => {
+          console.warn(`[OfflineStorage] Error clearing ${storeName}:`, tx.error);
+          resolve();
+        };
+      } catch (err) {
+        console.warn(`[OfflineStorage] Failed executeClear on ${storeName}:`, err);
+        resolve();
+      }
+    });
+  }
+
+  // ==========================================
+  // SPACES
+  // ==========================================
+  async getAllSpaces(): Promise<SpaceItem[]> {
+    const list = await this.executeGetAll(STORE_SPACES, this.memoryStore.spaces);
+    return this.sortByName(list);
+  }
+
+  async getSpace(id: string): Promise<SpaceItem | null> {
+    return this.executeGet(
+      STORE_SPACES,
+      id,
+      this.memoryStore.spaces.get(id) ?? null,
+      (item) => this.memoryStore.spaces.set(item.id, item),
+    );
   }
 
   async saveSpaces(items: SpaceItem[]): Promise<void> {
     for (const item of items) {
       this.memoryStore.spaces.set(item.id, item);
     }
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_SPACES, 'readwrite');
-        const store = tx.objectStore(STORE_SPACES);
-        for (const item of items) {
-          store.put(item);
-        }
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executePut(STORE_SPACES, items);
   }
 
   async removeSpaces(ids: string[]): Promise<void> {
     for (const id of ids) {
       this.memoryStore.spaces.delete(id);
     }
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_SPACES, 'readwrite');
-        const store = tx.objectStore(STORE_SPACES);
-        for (const id of ids) {
-          store.delete(id);
-        }
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executeDelete(STORE_SPACES, ids);
   }
 
   async clearSpaces(): Promise<void> {
     this.memoryStore.spaces.clear();
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_SPACES, 'readwrite');
-        tx.objectStore(STORE_SPACES).clear();
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executeClear(STORE_SPACES);
   }
 
   // ==========================================
   // ROOMS
   // ==========================================
   async getAllRooms(): Promise<RoomItem[]> {
-    const sortRooms = (list: RoomItem[]) =>
-      [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-    const db = await this.getDB();
-    if (!db) return sortRooms(Array.from(this.memoryStore.rooms.values()));
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_ROOMS, 'readonly');
-        const req = tx.objectStore(STORE_ROOMS).getAll();
-        req.onsuccess = () => resolve(sortRooms(req.result ?? []));
-        req.onerror = () => resolve(sortRooms(Array.from(this.memoryStore.rooms.values())));
-      } catch {
-        resolve(sortRooms(Array.from(this.memoryStore.rooms.values())));
-      }
-    });
+    const list = await this.executeGetAll(STORE_ROOMS, this.memoryStore.rooms);
+    return this.sortByName(list);
   }
 
   async getRoom(id: string): Promise<RoomItem | null> {
-    const db = await this.getDB();
-    if (!db) return this.memoryStore.rooms.get(id) ?? null;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_ROOMS, 'readonly');
-        const req = tx.objectStore(STORE_ROOMS).get(id);
-        req.onsuccess = () => resolve(req.result ?? null);
-        req.onerror = () => resolve(this.memoryStore.rooms.get(id) ?? null);
-      } catch {
-        resolve(this.memoryStore.rooms.get(id) ?? null);
-      }
-    });
+    return this.executeGet(
+      STORE_ROOMS,
+      id,
+      this.memoryStore.rooms.get(id) ?? null,
+      (item) => this.memoryStore.rooms.set(item.id, item),
+    );
   }
 
   async getRoomsBySpace(spaceId: string): Promise<RoomItem[]> {
-    const sortRooms = (list: RoomItem[]) =>
-      [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-    const db = await this.getDB();
-    if (!db) {
-      return sortRooms(Array.from(this.memoryStore.rooms.values()).filter((r) => r.spaceId === spaceId));
-    }
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_ROOMS, 'readonly');
-        const store = tx.objectStore(STORE_ROOMS);
-        if (store.indexNames.contains('spaceId')) {
-          const index = store.index('spaceId');
-          const req = index.getAll(spaceId);
-          req.onsuccess = () => resolve(sortRooms(req.result ?? []));
-          req.onerror = () =>
-            resolve(sortRooms(Array.from(this.memoryStore.rooms.values()).filter((r) => r.spaceId === spaceId)));
-        } else {
-          const req = store.getAll();
-          req.onsuccess = () =>
-            resolve(sortRooms((req.result ?? []).filter((r: RoomItem) => r.spaceId === spaceId)));
-          req.onerror = () =>
-            resolve(sortRooms(Array.from(this.memoryStore.rooms.values()).filter((r) => r.spaceId === spaceId)));
-        }
-      } catch {
-        resolve(sortRooms(Array.from(this.memoryStore.rooms.values()).filter((r) => r.spaceId === spaceId)));
-      }
-    });
+    const rooms = await this.getAllRooms();
+    return rooms.filter((r) => r.spaceId === spaceId);
   }
 
   async saveRooms(items: RoomItem[]): Promise<void> {
     for (const item of items) {
       this.memoryStore.rooms.set(item.id, item);
     }
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_ROOMS, 'readwrite');
-        const store = tx.objectStore(STORE_ROOMS);
-        for (const item of items) {
-          store.put(item);
-        }
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executePut(STORE_ROOMS, items);
   }
 
   async removeRooms(ids: string[]): Promise<void> {
     for (const id of ids) {
       this.memoryStore.rooms.delete(id);
     }
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_ROOMS, 'readwrite');
-        const store = tx.objectStore(STORE_ROOMS);
-        for (const id of ids) {
-          store.delete(id);
-        }
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executeDelete(STORE_ROOMS, ids);
   }
 
   async clearRooms(): Promise<void> {
     this.memoryStore.rooms.clear();
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_ROOMS, 'readwrite');
-        tx.objectStore(STORE_ROOMS).clear();
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executeClear(STORE_ROOMS);
   }
 
   // ==========================================
   // PLANTS
   // ==========================================
   async getAllPlants(): Promise<PlantItem[]> {
-    const sortPlants = (list: PlantItem[]) =>
-      [...list].sort((a, b) => (a.commonName || '').localeCompare(b.commonName || ''));
-    const db = await this.getDB();
-    if (!db) return sortPlants(Array.from(this.memoryStore.plants.values()));
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_PLANTS, 'readonly');
-        const req = tx.objectStore(STORE_PLANTS).getAll();
-        req.onsuccess = () => resolve(sortPlants(req.result ?? []));
-        req.onerror = () => resolve(sortPlants(Array.from(this.memoryStore.plants.values())));
-      } catch {
-        resolve(sortPlants(Array.from(this.memoryStore.plants.values())));
-      }
-    });
+    const list = await this.executeGetAll(STORE_PLANTS, this.memoryStore.plants);
+    return this.sortByCommonName(list);
   }
 
   async getPlant(id: string): Promise<PlantItem | null> {
-    const db = await this.getDB();
-    if (!db) return this.memoryStore.plants.get(id) ?? null;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_PLANTS, 'readonly');
-        const req = tx.objectStore(STORE_PLANTS).get(id);
-        req.onsuccess = () => resolve(req.result ?? null);
-        req.onerror = () => resolve(this.memoryStore.plants.get(id) ?? null);
-      } catch {
-        resolve(this.memoryStore.plants.get(id) ?? null);
-      }
-    });
+    return this.executeGet(
+      STORE_PLANTS,
+      id,
+      this.memoryStore.plants.get(id) ?? null,
+      (item) => this.memoryStore.plants.set(item.id, item),
+    );
   }
 
   async savePlants(items: PlantItem[]): Promise<void> {
     for (const item of items) {
       this.memoryStore.plants.set(item.id, item);
     }
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_PLANTS, 'readwrite');
-        const store = tx.objectStore(STORE_PLANTS);
-        for (const item of items) {
-          store.put(item);
-        }
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executePut(STORE_PLANTS, items);
   }
 
   async removePlants(ids: string[]): Promise<void> {
     for (const id of ids) {
       this.memoryStore.plants.delete(id);
     }
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_PLANTS, 'readwrite');
-        const store = tx.objectStore(STORE_PLANTS);
-        for (const id of ids) {
-          store.delete(id);
-        }
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executeDelete(STORE_PLANTS, ids);
   }
 
   async clearPlants(): Promise<void> {
     this.memoryStore.plants.clear();
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_PLANTS, 'readwrite');
-        tx.objectStore(STORE_PLANTS).clear();
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executeClear(STORE_PLANTS);
   }
 
   // ==========================================
   // ROOM PLANTS
   // ==========================================
   async getAllRoomPlants(): Promise<RoomPlantItem[]> {
-    const db = await this.getDB();
-    if (!db) return Array.from(this.memoryStore.roomPlants.values());
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_ROOM_PLANTS, 'readonly');
-        const req = tx.objectStore(STORE_ROOM_PLANTS).getAll();
-        req.onsuccess = () => resolve(req.result ?? []);
-        req.onerror = () => resolve(Array.from(this.memoryStore.roomPlants.values()));
-      } catch {
-        resolve(Array.from(this.memoryStore.roomPlants.values()));
-      }
-    });
+    return this.executeGetAll(STORE_ROOM_PLANTS, this.memoryStore.roomPlants);
   }
 
   async getRoomPlant(id: string): Promise<RoomPlantItem | null> {
-    const db = await this.getDB();
-    if (!db) return this.memoryStore.roomPlants.get(id) ?? null;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_ROOM_PLANTS, 'readonly');
-        const req = tx.objectStore(STORE_ROOM_PLANTS).get(id);
-        req.onsuccess = () => resolve(req.result ?? null);
-        req.onerror = () => resolve(this.memoryStore.roomPlants.get(id) ?? null);
-      } catch {
-        resolve(this.memoryStore.roomPlants.get(id) ?? null);
-      }
-    });
+    return this.executeGet(
+      STORE_ROOM_PLANTS,
+      id,
+      this.memoryStore.roomPlants.get(id) ?? null,
+      (item) => this.memoryStore.roomPlants.set(item.id, item),
+    );
   }
 
   async getRoomPlantsByRoom(roomId: string): Promise<RoomPlantItem[]> {
-    const db = await this.getDB();
-    if (!db) {
-      return Array.from(this.memoryStore.roomPlants.values()).filter((rp) => rp.roomId === roomId);
-    }
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_ROOM_PLANTS, 'readonly');
-        const store = tx.objectStore(STORE_ROOM_PLANTS);
-        if (store.indexNames.contains('roomId')) {
-          const index = store.index('roomId');
-          const req = index.getAll(roomId);
-          req.onsuccess = () => resolve(req.result ?? []);
-          req.onerror = () =>
-            resolve(Array.from(this.memoryStore.roomPlants.values()).filter((rp) => rp.roomId === roomId));
-        } else {
-          const req = store.getAll();
-          req.onsuccess = () =>
-            resolve((req.result ?? []).filter((rp: RoomPlantItem) => rp.roomId === roomId));
-          req.onerror = () =>
-            resolve(Array.from(this.memoryStore.roomPlants.values()).filter((rp) => rp.roomId === roomId));
-        }
-      } catch {
-        resolve(Array.from(this.memoryStore.roomPlants.values()).filter((rp) => rp.roomId === roomId));
-      }
-    });
+    const list = await this.getAllRoomPlants();
+    return list.filter((rp) => rp.roomId === roomId);
   }
 
   async getRoomPlantsByPlant(plantId: string): Promise<RoomPlantItem[]> {
-    const db = await this.getDB();
-    if (!db) {
-      return Array.from(this.memoryStore.roomPlants.values()).filter((rp) => rp.plantId === plantId);
-    }
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_ROOM_PLANTS, 'readonly');
-        const store = tx.objectStore(STORE_ROOM_PLANTS);
-        if (store.indexNames.contains('plantId')) {
-          const index = store.index('plantId');
-          const req = index.getAll(plantId);
-          req.onsuccess = () => resolve(req.result ?? []);
-          req.onerror = () =>
-            resolve(Array.from(this.memoryStore.roomPlants.values()).filter((rp) => rp.plantId === plantId));
-        } else {
-          const req = store.getAll();
-          req.onsuccess = () =>
-            resolve((req.result ?? []).filter((rp: RoomPlantItem) => rp.plantId === plantId));
-          req.onerror = () =>
-            resolve(Array.from(this.memoryStore.roomPlants.values()).filter((rp) => rp.plantId === plantId));
-        }
-      } catch {
-        resolve(Array.from(this.memoryStore.roomPlants.values()).filter((rp) => rp.plantId === plantId));
-      }
-    });
+    const list = await this.getAllRoomPlants();
+    return list.filter((rp) => rp.plantId === plantId);
   }
 
   async saveRoomPlants(items: RoomPlantItem[]): Promise<void> {
     for (const item of items) {
       this.memoryStore.roomPlants.set(item.id, item);
     }
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_ROOM_PLANTS, 'readwrite');
-        const store = tx.objectStore(STORE_ROOM_PLANTS);
-        for (const item of items) {
-          store.put(item);
-        }
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executePut(STORE_ROOM_PLANTS, items);
   }
 
   async removeRoomPlants(ids: string[]): Promise<void> {
     for (const id of ids) {
       this.memoryStore.roomPlants.delete(id);
     }
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_ROOM_PLANTS, 'readwrite');
-        const store = tx.objectStore(STORE_ROOM_PLANTS);
-        for (const id of ids) {
-          store.delete(id);
-        }
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executeDelete(STORE_ROOM_PLANTS, ids);
   }
 
   async clearRoomPlants(): Promise<void> {
     this.memoryStore.roomPlants.clear();
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_ROOM_PLANTS, 'readwrite');
-        tx.objectStore(STORE_ROOM_PLANTS).clear();
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executeClear(STORE_ROOM_PLANTS);
   }
 
   // ==========================================
@@ -579,9 +397,19 @@ export class OfflineStorageService {
       try {
         const tx = db.transaction(STORE_SETTINGS, 'readonly');
         const req = tx.objectStore(STORE_SETTINGS).get('user_settings');
-        req.onsuccess = () => resolve(req.result?.data ?? this.memoryStore.settings);
-        req.onerror = () => resolve(this.memoryStore.settings);
-      } catch {
+        req.onsuccess = () => {
+          const settings = req.result?.data ?? this.memoryStore.settings;
+          if (settings) {
+            this.memoryStore.settings = settings;
+          }
+          resolve(settings);
+        };
+        req.onerror = () => {
+          console.warn('[OfflineStorage] Error reading settings:', req.error);
+          resolve(this.memoryStore.settings);
+        };
+      } catch (err) {
+        console.warn('[OfflineStorage] Failed getSettings:', err);
         resolve(this.memoryStore.settings);
       }
     });
@@ -589,19 +417,7 @@ export class OfflineStorageService {
 
   async saveSettings(settings: UserSettings): Promise<void> {
     this.memoryStore.settings = settings;
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_SETTINGS, 'readwrite');
-        tx.objectStore(STORE_SETTINGS).put({ key: 'user_settings', data: settings });
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executePut(STORE_SETTINGS, [{ key: 'user_settings', data: settings }]);
   }
 
   // ==========================================
@@ -615,9 +431,17 @@ export class OfflineStorageService {
       try {
         const tx = db.transaction(STORE_QUEUE, 'readonly');
         const req = tx.objectStore(STORE_QUEUE).getAll();
-        req.onsuccess = () => resolve(req.result ?? []);
-        req.onerror = () => resolve([...this.memoryStore.queue]);
-      } catch {
+        req.onsuccess = () => {
+          const result: SyncQueueItem[] = req.result ?? [];
+          this.memoryStore.queue = [...result];
+          resolve(result);
+        };
+        req.onerror = () => {
+          console.warn('[OfflineStorage] Error reading queue:', req.error);
+          resolve([...this.memoryStore.queue]);
+        };
+      } catch (err) {
+        console.warn('[OfflineStorage] Failed getQueue:', err);
         resolve([...this.memoryStore.queue]);
       }
     });
@@ -625,78 +449,24 @@ export class OfflineStorageService {
 
   async enqueue(item: SyncQueueItem): Promise<void> {
     this.memoryStore.queue.push(item);
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_QUEUE, 'readwrite');
-        tx.objectStore(STORE_QUEUE).put(item);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executePut(STORE_QUEUE, [item]);
   }
 
   async enqueueBatch(items: SyncQueueItem[]): Promise<void> {
     if (!items.length) return;
     this.memoryStore.queue.push(...items);
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_QUEUE, 'readwrite');
-        const store = tx.objectStore(STORE_QUEUE);
-        for (const item of items) {
-          store.put(item);
-        }
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executePut(STORE_QUEUE, items);
   }
 
   async removeQueueItems(ids: string[]): Promise<void> {
     const idSet = new Set(ids);
     this.memoryStore.queue = this.memoryStore.queue.filter((i) => !idSet.has(i.id));
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_QUEUE, 'readwrite');
-        const store = tx.objectStore(STORE_QUEUE);
-        for (const id of ids) {
-          store.delete(id);
-        }
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executeDelete(STORE_QUEUE, ids);
   }
 
   async clearQueue(): Promise<void> {
     this.memoryStore.queue = [];
-    const db = await this.getDB();
-    if (!db) return;
-
-    return new Promise((resolve) => {
-      try {
-        const tx = db.transaction(STORE_QUEUE, 'readwrite');
-        tx.objectStore(STORE_QUEUE).clear();
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
+    await this.executeClear(STORE_QUEUE);
   }
 
   // ==========================================
@@ -712,17 +482,23 @@ export class OfflineStorageService {
         const req = tx.objectStore(STORE_META).get('sync_meta');
         req.onsuccess = () => {
           if (req.result) {
-            resolve({
+            const meta: StorageMetadata = {
               lastSyncAt: req.result.lastSyncAt ?? null,
               lastSyncStatus: req.result.lastSyncStatus ?? 'online-ok',
               conflicts: req.result.conflicts ?? [],
-            });
+            };
+            this.memoryStore.meta = { ...meta };
+            resolve(meta);
           } else {
             resolve({ ...this.memoryStore.meta });
           }
         };
-        req.onerror = () => resolve({ ...this.memoryStore.meta });
-      } catch {
+        req.onerror = () => {
+          console.warn('[OfflineStorage] Error reading metadata:', req.error);
+          resolve({ ...this.memoryStore.meta });
+        };
+      } catch (err) {
+        console.warn('[OfflineStorage] Failed getMetadata:', err);
         resolve({ ...this.memoryStore.meta });
       }
     });
@@ -742,8 +518,12 @@ export class OfflineStorageService {
           ...data,
         });
         tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
+        tx.onerror = () => {
+          console.warn('[OfflineStorage] Error saving metadata:', tx.error);
+          resolve();
+        };
+      } catch (err) {
+        console.warn('[OfflineStorage] Failed setMetadata:', err);
         resolve();
       }
     });
@@ -782,8 +562,12 @@ export class OfflineStorageService {
         tx.objectStore(STORE_QUEUE).clear();
         tx.objectStore(STORE_META).clear();
         tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-      } catch {
+        tx.onerror = () => {
+          console.warn('[OfflineStorage] Error clearing all stores:', tx.error);
+          resolve();
+        };
+      } catch (err) {
+        console.warn('[OfflineStorage] Failed clearAll:', err);
         resolve();
       }
     });

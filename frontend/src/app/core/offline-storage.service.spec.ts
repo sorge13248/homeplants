@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { OfflineStorageService } from './offline-storage.service';
-import { SpaceItem, RoomItem, PlantItem, UserSettings, SyncQueueItem } from './models';
+import { SpaceItem, RoomItem, PlantItem, RoomPlantItem, UserSettings, SyncQueueItem } from './models';
 
 describe('OfflineStorageService', () => {
   let service: OfflineStorageService;
@@ -149,5 +149,62 @@ describe('OfflineStorageService', () => {
     const meta = await service.getMetadata();
     expect(meta?.lastSyncAt).toBe('2026-11-05T12:00:00.000Z');
     expect(meta?.lastSyncStatus).toBe('online-ok');
+  });
+
+  it('dovrebbe gestire le associazioni room_plants e i relativi filtri', async () => {
+    const rp1: RoomPlantItem = {
+      id: 'rp-1',
+      roomId: 'room-1',
+      plantId: 'plant-1',
+      notes: 'Ficus grande',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const rp2: RoomPlantItem = {
+      id: 'rp-2',
+      roomId: 'room-2',
+      plantId: 'plant-1',
+      notes: 'Ficus piccolo',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    await service.saveRoomPlants([rp1, rp2]);
+
+    const single = await service.getRoomPlant('rp-1');
+    expect(single?.notes).toBe('Ficus grande');
+
+    const byRoom = await service.getRoomPlantsByRoom('room-1');
+    expect(byRoom.length).toBe(1);
+    expect(byRoom[0].id).toBe('rp-1');
+
+    const byPlant = await service.getRoomPlantsByPlant('plant-1');
+    expect(byPlant.length).toBe(2);
+
+    await service.removeRoomPlants(['rp-1']);
+    const remaining = await service.getAllRoomPlants();
+    expect(remaining.length).toBe(1);
+    expect(remaining[0].id).toBe('rp-2');
+
+    await service.clearRoomPlants();
+    const empty = await service.getAllRoomPlants();
+    expect(empty.length).toBe(0);
+  });
+
+  it('dovrebbe ripulire tutti gli archivi con clearAll', async () => {
+    await service.saveSpaces([{ id: 's-1', name: 'Spazio 1', createdAt: '', updatedAt: '' }]);
+    await service.saveRooms([{ id: 'r-1', spaceId: 's-1', name: 'Stanza 1', createdAt: '', updatedAt: '' }]);
+    await service.saveSettings({
+      preferredMapProvider: 'osm',
+      themePreference: 'light',
+      emailNotificationsEnabled: false,
+      notificationTime: '08:00',
+    });
+
+    await service.clearAll();
+
+    expect((await service.getAllSpaces()).length).toBe(0);
+    expect((await service.getAllRooms()).length).toBe(0);
+    expect(await service.getSettings()).toBeNull();
   });
 });
